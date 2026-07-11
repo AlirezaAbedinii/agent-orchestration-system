@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# Environment & local state
+.env
+task_workspaces/
+
+# Course material — not for redistribution
+BASWE__15_AI_Engineering_Projects_Guide.docx.md

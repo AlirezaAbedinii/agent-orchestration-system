@@ -1,0 +1,55 @@
+name: agent-orchestration-system
+
+# Phase 0: infra services only. The api, worker, and UI services are added in Phase 5
+# (see PROJECT_IMPLEMENTATION_PLAN.md §6.3).
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: orchestrator
+      POSTGRES_PASSWORD: orchestrator
+      POSTGRES_DB: orchestrator
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orchestrator -d orchestrator"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  chromadb:
+    # chroma 1.4.4 — the project pins by digest because upstream publishes no plain release tags
+    image: chromadb/chroma@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
+    ports:
+      # host 8010 → container 8000 (host port 8000 is commonly taken; in-network
+      # clients still reach chromadb:8000)
+      - "8010:8000"
+    volumes:
+      - chromadata:/data
+    healthcheck:
+      # The image is a bare Rust binary with bash but no curl; a TCP connect
+      # to the API port is the available liveness signal.
+      test: ["CMD", "/usr/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
+  chromadata:
