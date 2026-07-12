@@ -2,7 +2,7 @@
 
 > Multi-agent orchestration with tool use, persistent memory, and human-in-the-loop escalation — built as production infrastructure for autonomous AI workflows, not a chatbot demo.
 
-A supervisor agent decomposes a complex request into a dependency-ordered plan, delegates each subtask to a specialized tool-using agent, and routes every deliverable through an independent reviewer before it's accepted. The system remembers: agents share task-scoped working memory while they run, and every completed task is distilled into long-term semantic memory that informs the next plan. When the plan's confidence is low, a specialist fails repeatedly, or a review keeps failing, the system stops and escalates instead of guessing. Every decision — plan, tool call, review, memory access, escalation — is persisted, not just logged to stdout.
+A supervisor agent decomposes a complex request into a dependency-ordered plan, delegates each subtask to a specialized tool-using agent, and routes every deliverable through an independent reviewer before it's accepted. The system remembers: agents share task-scoped working memory while they run, and every completed task is distilled into long-term semantic memory that informs the next plan. And it knows when to stop: low plan confidence, repeated specialist failures, failing reviews, sensitive operations, or an explicit request pause the run mid-graph and hand the decision to a human, who can approve, edit, reject, or take over before execution resumes from the exact point it stopped. Every decision — plan, tool call, review, memory access, escalation, human resolution — is persisted, not just logged to stdout.
 
 ## Contents
 
@@ -10,6 +10,7 @@ A supervisor agent decomposes a complex request into a dependency-ordered plan, 
 - [Agent hierarchy](#agent-hierarchy)
 - [Tool registry](#tool-registry)
 - [Memory](#memory)
+- [Human-in-the-loop](#human-in-the-loop)
 - [Tech stack](#tech-stack)
 - [Project status](#project-status)
 - [Getting started](#getting-started)
@@ -38,7 +39,7 @@ flowchart LR
         Review -->|approved| Gather
         Review -.->|rejected + feedback| Schedule
         Gather -->|all subtasks done| Synthesize[Supervisor: synthesize]
-        Gather -.->|2x failure or rework exhausted| Escalate[Escalate]
+        Gather -.->|2x failure or rework exhausted| Escalate[Escalate: pause]
     end
 
     Runner --> Graph
@@ -47,13 +48,17 @@ flowchart LR
     Plan <-.->|retrieve| Chroma[(ChromaDB)]
     Synthesize -.->|extract memories| Chroma
     Runner --> Postgres[(PostgreSQL)]
+
+    Escalate -.->|full context| Queue[(Approval queue)]
+    Queue <--> Human[👤 Review UI]
+    Human -.->|approve / modify / reject / take over| Graph
 ```
 
 1. **Intake** — a request comes in via `POST /tasks`; a task row is created and the graph runs (inline in-process today, Celery-backed in the full deployment).
 2. **Plan** — the supervisor first retrieves similar past episodes, domain facts, and user preferences from long-term memory and plans with them in context. It decomposes the request into subtasks with dependencies, assigns each to a specialist, and reports a confidence score. Plans are schema-validated (unique ids, resolvable dependencies, no cycles) and retried once if invalid.
 3. **Schedule & execute** — independent subtasks run in parallel; each specialist works through a bounded tool-use loop, calling only the tools it owns. Outputs, intermediate results, and errors land in shared working memory as they happen.
 4. **Review** — every deliverable is scored 1–5 by a reviewer running on a *different model provider* than the specialist that produced it, so a shared provider blind spot can't rubber-stamp its own output. Rejections go back to the specialist with feedback (up to 2 rework cycles).
-5. **Escalate or synthesize** — two failures on the same subtask, or rework exhausted, halts the run for human input (the escalation path exists today as a stub — see [Project status](#project-status)). Otherwise the supervisor synthesizes the final deliverable from the completed subtasks.
+5. **Escalate or synthesize** — low plan confidence, two failures on the same subtask, exhausted rework, a sensitive tool call, or a user-requested review pauses the run: the graph checkpoints, the full decision context lands in the approval queue, and the reviewer is notified. Execution resumes from the exact pause point with the human's decision. Otherwise the supervisor synthesizes the final deliverable from the completed subtasks.
 6. **Remember** — the finished task is distilled (what was asked, what approach worked, tools used, facts discovered, preferences observed) into long-term memory, and the task's working memory is cleared. This is how the system gets better at repeated kinds of work.
 
 ## Agent hierarchy
@@ -97,6 +102,26 @@ Memories carry an importance score — `(1 + access_count) × exponential recenc
 | Dashboard | Everything the system remembers about a user, plus recent memory activity | `GET /memory/users/{id}` |
 | Right to forget | Purges a user's long-term memories, working memory, and audit trail | `DELETE /memory/users/{id}` |
 
+## Human-in-the-loop
+
+Escalation is a first-class graph state, not an afterthought. Five triggers pause a run; each maps to an approval level that says how deep the review goes (configurable per trigger via `APPROVAL_LEVEL_OVERRIDES`):
+
+| Trigger | Default level | The human decides on |
+|---|---|---|
+| Plan confidence below threshold | Approve plan | The full execution plan, before any work starts |
+| User requested review | Approve plan (+ final deliverable) | The plan, and later the finished deliverable |
+| Sensitive tool call (e.g. `api_call` POST) | Approve action | That specific call, arguments included |
+| Specialist failed twice on a subtask | Approve action | Retry, or take the subtask over |
+| Review score still failing after rework | Approve action | Retry with new guidance, reject, or take over |
+
+`NOTIFY` is the fourth level: record it, tell the human, keep going — nothing blocks.
+
+**Pausing is durable.** An escalation packages the complete decision context — request, plan, completed steps, the step in question, the agent's proposed action and reasoning, plus relevant long-term memories — into a Postgres-backed approval queue, notifies the reviewer (log + optional Slack-compatible webhook), and interrupts the graph. The checkpointed run survives restarts; nothing executes while a decision is pending.
+
+**Resolution resumes the graph** exactly where it stopped, with four actions: **approve** (proceed as proposed), **modify** (edited plan / tool arguments / feedback / deliverable — validated before it's accepted), **reject** (task ends with the reason recorded), **take over** (the human's output is used; agents stand down). Human review time is recorded per approval.
+
+**Review UI** (`make review-ui`, port 8511): the pending queue with trigger/level badges, execution progress, the proposed action with reasoning, relevant memories and similar past decisions, all four resolution actions — and a chat panel that answers clarifying questions grounded in the paused task's checkpointed state before you decide.
+
 ## Tech stack
 
 | Layer | Technology | Status |
@@ -110,7 +135,7 @@ Memories carry an importance score — `(1 + access_count) × exponential recenc
 | Short-term memory | Redis — task-scoped working memory | ✅ |
 | Long-term memory | ChromaDB — episodes/facts/preferences with importance scoring | ✅ |
 | Async execution | Celery + Redis — worker wired, beat schedules memory maintenance | 🚧 exercised in the full deployment |
-| Human review UI | Streamlit | ⬜ planned |
+| Human-in-the-loop | LangGraph interrupts + approval queue, four resolution actions, review UI (Streamlit) | ✅ |
 | Observability | OpenTelemetry + trace explorer | ⬜ planned |
 | Containerization | Docker + docker-compose | 🚧 infra services today; full stack later |
 
@@ -121,7 +146,7 @@ Memories carry an importance score — `(1 + access_count) × exponential recenc
 | 0 | Project scaffolding, config, infra containers | ✅ Done |
 | 1 | Agent hierarchy, task decomposition, tool registry, LangGraph state machine | ✅ Done |
 | 2 | Working memory (Redis) + long-term semantic memory (ChromaDB) with retrieval, consolidation, expiration | ✅ Done |
-| 3 | Human-in-the-loop approval queue and review UI | ⬜ Planned |
+| 3 | Human-in-the-loop: escalation triggers, approval queue on graph interrupts, review UI | ✅ Done |
 | 4 | Execution tracing, trace explorer, cost tracking, replay | ⬜ Planned |
 | 5 | Full containerized stack, demo scenario, end-to-end tests | ⬜ Planned |
 | 6 | Portfolio polish — recorded demo, final narrative | ⬜ Planned |
@@ -143,6 +168,7 @@ make seed                         # seed the demo schema used by db_query
 make sandbox                      # build the code-exec sandbox image
 
 make dev                          # FastAPI on :8080, inline run mode
+make review-ui                    # human review queue on :8511
 ```
 
 ## Usage
@@ -163,6 +189,11 @@ curl localhost:8080/tasks/a1b2c3...
 
 curl localhost:8080/memory/users/default          # what the system remembers
 curl -X DELETE localhost:8080/memory/users/default  # forget everything about a user
+
+curl "localhost:8080/approvals?status=pending"      # what's waiting for a human
+curl -X POST localhost:8080/approvals/<id>/resolve \
+  -H "Content-Type: application/json" \
+  -d '{"action": "approve", "notes": "cleared to run"}'   # …and the task resumes
 ```
 
 ## Testing
@@ -180,23 +211,27 @@ Integration tests exercise the full stack — API → graph → Postgres — usi
 src/orchestrator/
 ├── config.py              # settings (env-driven)
 ├── main.py                # FastAPI app
-├── api/routes/             # tasks.py, memory.py — task intake, memory dashboard/maintenance
+├── api/routes/             # tasks.py, memory.py, approvals.py
 ├── llm/                    # provider routing, structured-output parsing, mock fixture player
 ├── agents/                 # supervisor, reviewer, specialists (research/analysis/writing/code)
 ├── planning/                # ExecutionPlan/Subtask schemas + decomposition
 ├── graph/                  # LangGraph state, nodes, conditional edges, checkpointing
 ├── tools/                  # tool registry + the 5 built-in tools
 ├── memory/                 # working (Redis), long-term (ChromaDB), extraction, retrieval, management
+├── hitl/                   # escalation triggers, approval levels, queue, notifications
 ├── db/                     # SQLAlchemy models, Alembic migrations, repositories
 └── workers/                # Celery app, task wrapper, beat jobs (memory maintenance)
 
+ui/
+└── review_app.py           # Streamlit human review queue (port 8511)
+
 tests/
-├── unit/                   # schemas, registry, tools, graph routing, memory management
-├── integration/            # API → graph → Postgres/Redis/ChromaDB, live smoke test
+├── unit/                   # schemas, registry, tools, graph routing, memory, triggers, queue
+├── integration/            # API → graph → Postgres/Redis/ChromaDB, pause/resume, live smoke
 └── fixtures/llm/           # recorded LLM responses for deterministic runs
 ```
 
-`hitl/`, `observability/`, and `ui/` land in later phases (see [Project status](#project-status)).
+`observability/` and the trace explorer land in later phases (see [Project status](#project-status)).
 
 ## Design decisions
 
@@ -208,3 +243,5 @@ tests/
 - **Memory never blocks a task.** Retrieval and extraction failures degrade to "plan without memories" / "skip the write" with a warning — a flaky memory store must not fail a task that otherwise succeeded.
 - **Retrieval is access.** Injecting a memory into a plan bumps its access count and importance, so the memories that actually influence work are the ones that survive consolidation and expiration.
 - **Client-side embeddings.** Vectors are computed in the app (OpenAI in real mode, a deterministic token-hash under `MOCK_LLM`) and handed to Chroma explicitly — retrieval stays testable offline and independent of server-side embedding config.
+- **Escalation enqueues idempotently.** An interrupted LangGraph node re-executes its pre-interrupt code when it resumes, so approval creation is keyed by (task, gate) — the resume pass finds the existing row instead of enqueueing and notifying twice.
+- **Humans get context, not a yes/no button.** Every approval carries the request, plan, completed steps, the exact step in question, the agent's proposed action with reasoning, and relevant memories — plus a chat panel over the checkpointed state — because a reviewer who can't see why will rubber-stamp.
