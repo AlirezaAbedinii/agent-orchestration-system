@@ -81,6 +81,29 @@ class SubtaskRow(Base):
     )
 
 
+class ApprovalRow(Base):
+    """Human-in-the-loop approval queue: one row per escalation decision point."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (UniqueConstraint("task_id", "gate_key", name="uq_approvals_task_gate"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    gate_key: Mapped[str] = mapped_column(String(64))
+    trigger: Mapped[str] = mapped_column(String(32))
+    level: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|resolved|notified
+    context: Mapped[dict] = mapped_column(JSON)
+    proposed_action: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution_action: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    resolution_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
 class MemoryEvent(Base):
     """Audit log of long-term memory activity (created/retrieved/consolidated/
     expired/deleted) — feeds the dashboard and, later, tracing."""

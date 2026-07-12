@@ -62,6 +62,8 @@ class Settings(BaseSettings):
 
     # Human-in-the-loop
     approval_webhook_url: str = ""
+    # Per-trigger approval-level overrides, e.g. {"sensitive_operation": "notify"}
+    approval_level_overrides: dict[str, str] = {}
 
 
 @lru_cache
