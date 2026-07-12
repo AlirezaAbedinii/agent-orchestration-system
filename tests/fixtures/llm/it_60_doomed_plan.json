@@ -1,0 +1,5 @@
+{
+  "agent": "supervisor",
+  "match": ["Create an execution plan", "TRIGGER-FAILURE"],
+  "response": {"text": "{\"task_summary\": \"Research the cursed topic\", \"subtasks\": [{\"id\": \"s1\", \"description\": \"Research the cursed topic\", \"specialist\": \"research\", \"required_inputs\": [], \"expected_output_format\": \"notes\", \"estimated_complexity\": \"low\", \"depends_on\": []}], \"confidence\": 0.9}"}
+}

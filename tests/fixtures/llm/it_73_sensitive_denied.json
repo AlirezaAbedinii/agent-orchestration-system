@@ -1,0 +1,5 @@
+{
+  "agent": "research",
+  "match": ["Post the announcement", "denied by human reviewer"],
+  "response": {"text": "{\"action\": \"final\", \"output\": \"SKIPPED-POST: announcement not sent (reviewer denied the api call)\"}"}
+}

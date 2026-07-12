@@ -1,0 +1,5 @@
+{
+  "agent": "research",
+  "match": ["Post the announcement", "Transcript: (none yet)"],
+  "response": {"text": "{\"action\": \"tool\", \"tool\": \"api_call\", \"arguments\": {\"method\": \"POST\", \"url\": \"https://api.github.com/announce\", \"json_body\": {\"message\": \"release is live\"}}}"}
+}

@@ -109,14 +109,47 @@ class SpecialistAgent(BaseAgent):
             return parse_structured(retry.text, SpecialistAction)
 
     def execute(
-        self, spec: dict, inputs: dict[str, str], feedback: str | None, ctx: ToolContext
+        self,
+        spec: dict,
+        inputs: dict[str, str],
+        feedback: str | None,
+        ctx: ToolContext,
+        gate=None,
     ) -> SpecialistResult:
+        """Run the tool loop. `gate(tool, arguments, iteration, transcript)` is
+        consulted before any sensitive tool call and returns a human decision:
+        approve (run it), modify (run with edited arguments), reject (skip the
+        call; the denial goes into the transcript), or take_over (the human's
+        payload becomes the tool result)."""
         transcript: list[str] = []
         tool_calls: list[str] = []
-        for _ in range(get_settings().max_tool_iterations):
+        for iteration in range(get_settings().max_tool_iterations):
             action = self._next_action(self._prompt(spec, inputs, feedback, transcript))
             if action.action == "final":
                 return SpecialistResult(output=action.output or "", tool_calls=tool_calls)
+
+            if gate is not None and self.registry.is_sensitive_call(action.tool, action.arguments):
+                decision = gate(action.tool, action.arguments, iteration, list(transcript)) or {}
+                verdict = decision.get("action", "approve")
+                payload = decision.get("payload") or {}
+                notes = decision.get("notes", "")
+                if verdict == "reject":
+                    transcript.append(
+                        f"-> {action.tool} call denied by human reviewer: {notes or 'not permitted'}"
+                    )
+                    continue
+                if verdict == "take_over":
+                    human_result = payload.get("output", "")
+                    transcript.append(
+                        f"{TOOL_RESULT_PREFIX.format(tool=action.tool)} (human-provided) {human_result}"
+                    )
+                    tool_calls.append(f"{action.tool}[human]")
+                    continue
+                if verdict == "modify":
+                    action = action.model_copy(
+                        update={"arguments": payload.get("arguments", action.arguments)}
+                    )
+
             result = self.registry.invoke(action.tool, action.arguments, ctx)
             tool_calls.append(action.tool)
             rendered = json.dumps(result)[:2000]

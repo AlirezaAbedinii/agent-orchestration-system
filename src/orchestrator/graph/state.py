@@ -29,5 +29,7 @@ class TaskState(TypedDict, total=False):
     dispatch_log: Annotated[list[list[str]], operator.add]
     current_wave: list[dict]
     needs_escalation: bool
+    escalation: dict | None
     escalation_reason: str | None
+    hitl_decision: dict | None
     final_output: str | None

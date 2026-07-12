@@ -1,0 +1,5 @@
+{
+  "agent": "hitl",
+  "match": ["Answer the reviewer's question", "vector databases"],
+  "response": {"text": "The plan decomposes the vector-database comparison into research, analysis, code, and writing subtasks; nothing has executed yet — it is waiting for your approval."}
+}

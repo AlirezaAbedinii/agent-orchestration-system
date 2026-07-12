@@ -1,0 +1,5 @@
+{
+  "agent": "research",
+  "match": ["Post the announcement", "-> api_call returned:"],
+  "response": {"text": "{\"action\": \"final\", \"output\": \"POSTED-OK: announcement delivered via api_call\"}"}
+}

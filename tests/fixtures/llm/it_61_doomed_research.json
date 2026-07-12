@@ -1,0 +1,5 @@
+{
+  "agent": "research",
+  "match": ["cursed topic"],
+  "response": {"text": "{\"action\": \"tool\", \"tool\": \"bogus_tool\", \"arguments\": {}}"}
+}

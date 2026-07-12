@@ -6,16 +6,41 @@ from langgraph.types import Send
 
 from orchestrator.config import get_settings
 from orchestrator.graph.state import TaskState
+from orchestrator.hitl.triggers import plan_escalation
 from orchestrator.planning.schemas import ExecutionPlan
 
 
 def plan_gate(state: TaskState) -> str:
-    """After planning: fail fast, escalate on low confidence, else execute."""
+    """After planning: fail fast, escalate on low confidence or user request."""
     if state.get("plan") is None:
         return "failed"
-    if state.get("confidence", 1.0) < get_settings().plan_confidence_threshold:
-        return "escalate"
+    escalation = plan_escalation(
+        state.get("confidence", 1.0),
+        state.get("require_human_review", False),
+        get_settings().plan_confidence_threshold,
+    )
+    return "escalate_plan" if escalation else "schedule"
+
+
+def _hitl_action(state: TaskState) -> str:
+    return (state.get("hitl_decision") or {}).get("action", "approve")
+
+
+def route_after_plan_escalation(state: TaskState) -> str:
+    action = _hitl_action(state)
+    if action == "reject":
+        return "end"
+    if action == "take_over":
+        return "deliver"
     return "schedule"
+
+
+def route_after_subtask_escalation(state: TaskState) -> str:
+    return "end" if _hitl_action(state) == "reject" else "schedule"
+
+
+def route_after_final_gate(state: TaskState) -> str:
+    return "end" if _hitl_action(state) == "reject" else "deliver"
 
 
 def compute_wave(state: TaskState) -> list[dict]:

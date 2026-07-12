@@ -42,6 +42,14 @@ class ToolRegistry:
     def tools_for(self, specialist: str) -> list[ToolSpec]:
         return [s for s in self._specs.values() if specialist in s.owners]
 
+    def is_sensitive_call(self, tool_name: str, arguments: dict) -> bool:
+        """Whether this specific invocation would be sensitive (pre-flight check)."""
+        try:
+            spec = self.get(tool_name)
+            return spec.is_sensitive(spec.input_schema.model_validate(arguments))
+        except Exception:
+            return False  # let invoke() produce the proper error/logging
+
     def describe_for(self, specialist: str) -> str:
         """Prompt block listing the tools a specialist may call."""
         lines = []
