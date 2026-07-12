@@ -1,4 +1,4 @@
-.PHONY: infra dev test migrate seed sandbox
+.PHONY: infra dev test migrate seed sandbox review-ui
 
 VENV ?= .venv
 UVICORN ?= $(VENV)/bin/uvicorn
@@ -25,3 +25,6 @@ seed:  ## seed the demo schema used by the db_query tool
 
 sandbox:  ## build the code-execution sandbox image
 	docker build -t orchestrator-sandbox -f docker/sandbox.Dockerfile docker/
+
+review-ui:  ## human review queue UI (port 8511; 8501 tends to be taken)
+	ORCHESTRATOR_API_URL=http://localhost:8080 $(VENV)/bin/streamlit run ui/review_app.py --server.port 8511 --server.headless true
