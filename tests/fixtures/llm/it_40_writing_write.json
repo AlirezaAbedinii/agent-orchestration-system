@@ -1,0 +1,5 @@
+{
+  "agent": "writing",
+  "match": ["comparison memo", "Transcript: (none yet)"],
+  "response": {"text": "{\"action\": \"tool\", \"tool\": \"file_write\", \"arguments\": {\"path\": \"memo.md\", \"content\": \"# Vector DB comparison\\n\\nQdrant leads on stars; Chroma is simplest to embed.\"}}"}
+}

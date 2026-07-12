@@ -7,7 +7,7 @@ def test_defaults_are_dev_friendly():
     assert settings.plan_confidence_threshold == 0.7
     assert settings.review_score_threshold == 3
     assert settings.max_specialist_retries == 2
-    assert settings.chroma_port == 8000
+    assert settings.chroma_port == 8010  # host mapping of chromadb:8000
 
 
 def test_env_overrides(monkeypatch):

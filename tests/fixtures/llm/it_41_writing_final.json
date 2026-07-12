@@ -1,0 +1,5 @@
+{
+  "agent": "writing",
+  "match": ["comparison memo", "-> file_write returned:"],
+  "response": {"text": "{\"action\": \"final\", \"output\": \"MEMO-DELIVERED: memo.md\"}"}
+}

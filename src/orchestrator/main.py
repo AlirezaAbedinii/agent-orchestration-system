@@ -2,12 +2,14 @@
 
 from fastapi import FastAPI
 
+from orchestrator.api.routes.tasks import router as tasks_router
 from orchestrator.config import get_settings
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Agent Orchestration System", version="0.1.0")
+    app.include_router(tasks_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

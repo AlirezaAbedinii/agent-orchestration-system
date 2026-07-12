@@ -1,0 +1,5 @@
+{
+  "agent": "research",
+  "match": ["Gather facts about Chroma", "Transcript: (none yet)"],
+  "response": {"text": "{\"action\": \"tool\", \"tool\": \"web_search\", \"arguments\": {\"query\": \"Chroma vector database\"}}"}
+}

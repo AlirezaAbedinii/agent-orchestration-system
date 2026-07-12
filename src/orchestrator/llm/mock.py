@@ -5,13 +5,16 @@ Recorded provider responses live as JSON files in the fixtures directory
 
   1. ``<fixtures_dir>/<key>.json`` where key = sha256("{agent}::{prompt}")[:16]
      — an exact recorded call (written by scripts/record_fixtures.py, Phase 5)
-  2. ``<fixtures_dir>/<agent>.json`` — an agent-level default response
+  2. any fixture whose ``match`` substring(s) all occur in the prompt for that
+     agent — scanned in filename order; used to script multi-step behaviour
+  3. ``<fixtures_dir>/<agent>.json`` — an agent-level default response
 
 Fixture file format::
 
     {
       "agent": "supervisor",
-      "prompt": "...",                     # informational
+      "prompt": "...",                     # informational (exact fixtures)
+      "match": ["Create an execution plan", "vector databases"],  # optional
       "response": {
         "text": "...",
         "model": "gpt-4o",
@@ -45,23 +48,42 @@ def fixture_key(agent: str, prompt: str) -> str:
     return hashlib.sha256(f"{agent}::{prompt}".encode()).hexdigest()[:16]
 
 
+def _to_response(payload: dict) -> LLMResponse:
+    response = payload.get("response", {})
+    return LLMResponse(
+        text=response.get("text", ""),
+        model=response.get("model", "mock"),
+        prompt_tokens=int(response.get("prompt_tokens", 0)),
+        completion_tokens=int(response.get("completion_tokens", 0)),
+    )
+
+
 class MockLLMClient:
     def __init__(self, fixtures_dir: Path | str):
         self.fixtures_dir = Path(fixtures_dir)
 
-    def complete(self, agent: str, prompt: str) -> LLMResponse:
-        key = fixture_key(agent, prompt)
-        for candidate in (self.fixtures_dir / f"{key}.json", self.fixtures_dir / f"{agent}.json"):
-            if candidate.exists():
-                payload = json.loads(candidate.read_text(encoding="utf-8"))
-                response = payload.get("response", {})
-                return LLMResponse(
-                    text=response.get("text", ""),
-                    model=response.get("model", "mock"),
-                    prompt_tokens=int(response.get("prompt_tokens", 0)),
-                    completion_tokens=int(response.get("completion_tokens", 0)),
-                )
+    def complete(
+        self, agent: str, prompt: str, *, producer_provider: str | None = None
+    ) -> LLMResponse:
+        exact = self.fixtures_dir / f"{fixture_key(agent, prompt)}.json"
+        if exact.exists():
+            return _to_response(json.loads(exact.read_text(encoding="utf-8")))
+
+        for path in sorted(self.fixtures_dir.glob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            match = payload.get("match")
+            if payload.get("agent") != agent or not match:
+                continue
+            needles = [match] if isinstance(match, str) else match
+            if all(needle in prompt for needle in needles):
+                return _to_response(payload)
+
+        default = self.fixtures_dir / f"{agent}.json"
+        if default.exists():
+            return _to_response(json.loads(default.read_text(encoding="utf-8")))
+
         raise FixtureNotFoundError(
-            f"No LLM fixture for agent={agent!r} (key={key}) in {self.fixtures_dir}. "
-            f"Add {key}.json for this exact call or {agent}.json as an agent default."
+            f"No LLM fixture for agent={agent!r} (key={fixture_key(agent, prompt)}) in "
+            f"{self.fixtures_dir}. Add {fixture_key(agent, prompt)}.json for this exact call, "
+            f"a match-fixture, or {agent}.json as an agent default."
         )

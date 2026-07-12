@@ -1,0 +1,5 @@
+{
+  "agent": "research",
+  "match": ["Gather facts about Chroma", "[mock] result for"],
+  "response": {"text": "{\"action\": \"final\", \"output\": \"CHROMA-FACTS: Chroma is an open-source embedding database (source: example.com/mock)\"}"}
+}

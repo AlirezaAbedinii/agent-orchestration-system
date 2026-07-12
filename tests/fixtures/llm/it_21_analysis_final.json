@@ -1,0 +1,5 @@
+{
+  "agent": "analysis",
+  "match": ["star ranking", "-> db_query returned:"],
+  "response": {"text": "{\"action\": \"final\", \"output\": \"ANALYSIS-RANKING: qdrant (24000) > chroma (21000) > weaviate (13000)\"}"}
+}

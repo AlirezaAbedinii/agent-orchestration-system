@@ -1,0 +1,4 @@
+{
+  "agent": "reviewer",
+  "response": {"text": "{\"score\": 5, \"feedback\": \"solid\"}", "model": "mock-claude", "prompt_tokens": 120, "completion_tokens": 15}
+}

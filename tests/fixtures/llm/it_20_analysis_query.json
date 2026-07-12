@@ -1,0 +1,5 @@
+{
+  "agent": "analysis",
+  "match": ["star ranking", "Transcript: (none yet)"],
+  "response": {"text": "{\"action\": \"tool\", \"tool\": \"db_query\", \"arguments\": {\"sql\": \"SELECT name, github_stars FROM demo.vector_db_stats ORDER BY github_stars DESC\"}}"}
+}

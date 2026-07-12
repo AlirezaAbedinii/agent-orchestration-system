@@ -2,6 +2,8 @@ import os
 
 # Tests never call real providers; set before any orchestrator import.
 os.environ.setdefault("MOCK_LLM", "1")
+# Tests run code_exec via the isolated subprocess backend (no Docker needed).
+os.environ.setdefault("CODE_EXEC_BACKEND", "subprocess")
 
 import pytest
 from fastapi.testclient import TestClient

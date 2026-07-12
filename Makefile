@@ -1,4 +1,4 @@
-.PHONY: infra dev test migrate
+.PHONY: infra dev test migrate seed sandbox
 
 VENV ?= .venv
 UVICORN ?= $(VENV)/bin/uvicorn
@@ -19,3 +19,9 @@ test:  ## unit + integration tests; deterministic, no API keys needed
 
 migrate:  ## apply Alembic migrations to the composed postgres
 	DATABASE_URL=$(LOCAL_DATABASE_URL) $(ALEMBIC) upgrade head
+
+seed:  ## seed the demo schema used by the db_query tool
+	DATABASE_URL=$(LOCAL_DATABASE_URL) $(VENV)/bin/python -m orchestrator.db.seed_demo_data
+
+sandbox:  ## build the code-execution sandbox image
+	docker build -t orchestrator-sandbox -f docker/sandbox.Dockerfile docker/

@@ -1,0 +1,5 @@
+{
+  "agent": "supervisor",
+  "match": ["Synthesize the final deliverable"],
+  "response": {"text": "FINAL: comparison memo delivered (memo.md) — qdrant > chroma > weaviate.", "model": "mock-gpt-4o", "prompt_tokens": 300, "completion_tokens": 40}
+}

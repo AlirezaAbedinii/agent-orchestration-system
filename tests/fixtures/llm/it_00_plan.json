@@ -1,0 +1,8 @@
+{
+  "agent": "supervisor",
+  "match": ["Create an execution plan", "vector databases"],
+  "response": {
+    "text": "{\"task_summary\": \"Research vector DBs, analyze stats, generate table, write memo\", \"subtasks\": [{\"id\": \"s1\", \"description\": \"Gather facts about Chroma from the web\", \"specialist\": \"research\", \"required_inputs\": [], \"expected_output_format\": \"bullet facts with sources\", \"estimated_complexity\": \"low\", \"depends_on\": []}, {\"id\": \"s2\", \"description\": \"Compute the GitHub star ranking of vector databases from the demo database\", \"specialist\": \"analysis\", \"required_inputs\": [], \"expected_output_format\": \"ranking list\", \"estimated_complexity\": \"low\", \"depends_on\": []}, {\"id\": \"s3\", \"description\": \"Generate a comparison table using Python\", \"specialist\": \"code\", \"required_inputs\": [], \"expected_output_format\": \"text table\", \"estimated_complexity\": \"low\", \"depends_on\": []}, {\"id\": \"s4\", \"description\": \"Write a comparison memo and save it as memo.md\", \"specialist\": \"writing\", \"required_inputs\": [\"facts\", \"ranking\", \"table\"], \"expected_output_format\": \"markdown memo\", \"estimated_complexity\": \"medium\", \"depends_on\": [\"s1\", \"s2\", \"s3\"]}], \"confidence\": 0.9}",
+    "model": "mock-gpt-4o", "prompt_tokens": 450, "completion_tokens": 280
+  }
+}

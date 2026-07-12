@@ -31,6 +31,20 @@ class Settings(BaseSettings):
     mock_llm: bool = False
     llm_fixtures_dir: Path = Path("tests/fixtures/llm")
 
+    # Agent → model routing ("provider:model"); the reviewer must land on a
+    # different provider than the producing agent (see llm/router.py)
+    model_supervisor: str = "openai:gpt-4o"
+    model_specialist: str = "openai:gpt-4o-mini"
+    model_reviewer: str = "anthropic:claude-sonnet-5"
+
+    # Tools
+    workspace_root: Path = Path("task_workspaces")
+    max_tool_iterations: int = 5
+    api_call_allowlist: list[str] = ["api.github.com"]
+    code_exec_backend: Literal["docker", "subprocess"] = "docker"
+    code_exec_image: str = "orchestrator-sandbox"
+    code_exec_timeout_s: int = 20
+
     # Thresholds
     plan_confidence_threshold: float = 0.7
     review_score_threshold: int = 3
