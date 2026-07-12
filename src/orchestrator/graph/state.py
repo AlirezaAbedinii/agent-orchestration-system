@@ -19,6 +19,7 @@ def merge_results(left: dict | None, right: dict | None) -> dict:
 class TaskState(TypedDict, total=False):
     task_id: str
     request: str
+    user_id: str
     require_human_review: bool
     plan: dict | None
     plan_error: str | None

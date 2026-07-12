@@ -9,6 +9,7 @@ from orchestrator.db.repo import DBInvocationStore, DBTaskRepo
 from orchestrator.graph.builder import build_graph
 from orchestrator.graph.checkpointing import get_checkpointer
 from orchestrator.llm.clients import get_llm_client
+from orchestrator.memory.working import WorkingMemory
 from orchestrator.tools.defaults import build_default_registry
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ def get_production_graph():
         registry=build_default_registry(DBInvocationStore()),
         repo=DBTaskRepo(),
         checkpointer=get_checkpointer(),
+        working=WorkingMemory(),
     )
 
 
@@ -33,6 +35,7 @@ def run_task(task_id: str) -> None:
     initial = {
         "task_id": task_id,
         "request": bundle["request"],
+        "user_id": bundle["user_id"],
         "require_human_review": bundle["require_human_review"],
         "subtask_results": {},
         "dispatch_log": [],

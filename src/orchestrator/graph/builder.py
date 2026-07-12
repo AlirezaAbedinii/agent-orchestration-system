@@ -30,6 +30,7 @@ def build_graph(
     registry: ToolRegistry | None = None,
     repo=None,
     checkpointer=None,
+    working=None,
 ):
     settings = get_settings()
     llm = llm or get_llm_client()
@@ -42,6 +43,10 @@ def build_graph(
         from orchestrator.db.repo import DBTaskRepo
 
         repo = DBTaskRepo()
+    if working is None:
+        from orchestrator.memory.working import InMemoryWorkingMemory
+
+        working = InMemoryWorkingMemory()
 
     supervisor = Supervisor(llm)
     reviewer = Reviewer(llm)
@@ -49,6 +54,7 @@ def build_graph(
 
     def intake(state: TaskState) -> dict:
         repo.set_status(state["task_id"], "planning")
+        working.start(state["task_id"], state.get("user_id", "default"))
         return {}
 
     def plan_node(state: TaskState) -> dict:
@@ -58,6 +64,7 @@ def build_graph(
             repo.set_status(state["task_id"], "failed", error=str(error))
             return {"plan": None, "plan_error": str(error)}
         repo.save_plan(state["task_id"], plan)
+        working.set_plan(state["task_id"], plan.model_dump())
         return {"plan": plan.model_dump(), "confidence": plan.confidence}
 
     def schedule(state: TaskState) -> dict:
@@ -107,6 +114,7 @@ def build_graph(
                 "feedback": f"Previous attempt raised an error: {error}. Try a different approach.",
             }
             repo.record_subtask(task_id, sid, status="failed", attempts=attempts, error=str(error))
+            working.record_error(task_id, sid, str(error))
             return {"subtask_results": {sid: entry}}
 
         approved = verdict.score >= settings.review_score_threshold
@@ -124,6 +132,8 @@ def build_graph(
                 status="completed", attempts=attempts, output=result.output,
                 review_score=verdict.score, review_feedback=verdict.feedback,
             )
+            working.record_subtask_output(task_id, sid, result.output)
+            working.set_intermediate(task_id, f"tools:{sid}", result.tool_calls)
         else:
             entry["status"] = "rework"
             entry["rework_count"] = base["rework_count"] + 1
@@ -164,6 +174,9 @@ def build_graph(
 
     def deliver(state: TaskState) -> dict:
         repo.set_final_output(state["task_id"], state.get("final_output") or "")
+        # Working memory is scoped to a single task: cleared on completion.
+        # Escalated tasks keep theirs — Phase 3 resumes them.
+        working.clear(state["task_id"])
         return {}
 
     def escalate(state: TaskState) -> dict:

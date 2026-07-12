@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     model_specialist: str = "openai:gpt-4o-mini"
     model_reviewer: str = "anthropic:claude-sonnet-5"
 
+    # Memory
+    working_memory_ttl_s: int = 86_400  # safety net for crashed runs; normal path clears explicitly
+
     # Tools
     workspace_root: Path = Path("task_workspaces")
     max_tool_iterations: int = 5
