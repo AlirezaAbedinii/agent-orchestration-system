@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from orchestrator.db.repo import DBInvocationStore, DBTaskRepo
+from orchestrator.db.repo import DBInvocationStore, DBTaskRepo, MemoryEventStore
 from orchestrator.graph.builder import build_graph
 from orchestrator.graph.checkpointing import get_checkpointer
 from orchestrator.llm.clients import get_llm_client
+from orchestrator.memory.longterm import LongTermMemory
 from orchestrator.memory.working import WorkingMemory
 from orchestrator.tools.defaults import build_default_registry
 
@@ -23,6 +24,8 @@ def get_production_graph():
         repo=DBTaskRepo(),
         checkpointer=get_checkpointer(),
         working=WorkingMemory(),
+        longterm=LongTermMemory(),
+        memory_events=MemoryEventStore(),
     )
 
 

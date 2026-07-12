@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy.orm import Session, sessionmaker
 
-from orchestrator.db.models import PlanRow, SubtaskRow, Task, ToolInvocation
+from orchestrator.db.models import MemoryEvent, PlanRow, SubtaskRow, Task, ToolInvocation
 from orchestrator.db.session import get_sessionmaker
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools.base import InvocationRecord
@@ -49,6 +49,62 @@ class DBInvocationStore:
                     ToolInvocation.status.in_(("success", "failure")),
                 )
             )
+
+
+class MemoryEventStore:
+    """Audit log for long-term memory activity."""
+
+    def __init__(self, session_factory: sessionmaker[Session] | None = None):
+        self._sessions = session_factory or get_sessionmaker()
+
+    def record(
+        self,
+        *,
+        user_id: str,
+        memory_id: str,
+        kind: str,
+        action: str,
+        task_id: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        with self._sessions() as session, session.begin():
+            session.add(
+                MemoryEvent(
+                    user_id=user_id,
+                    memory_id=memory_id,
+                    kind=kind,
+                    action=action,
+                    task_id=task_id,
+                    detail=detail,
+                )
+            )
+
+    def recent(self, user_id: str, limit: int = 20) -> list[dict]:
+        with self._sessions() as session:
+            rows = session.scalars(
+                sa.select(MemoryEvent)
+                .where(MemoryEvent.user_id == user_id)
+                .order_by(MemoryEvent.created_at.desc())
+                .limit(limit)
+            )
+            return [
+                {
+                    "memory_id": row.memory_id,
+                    "kind": row.kind,
+                    "action": row.action,
+                    "task_id": row.task_id,
+                    "detail": row.detail,
+                    "created_at": row.created_at.isoformat(),
+                }
+                for row in rows
+            ]
+
+    def purge_user(self, user_id: str) -> int:
+        with self._sessions() as session, session.begin():
+            result = session.execute(
+                sa.delete(MemoryEvent).where(MemoryEvent.user_id == user_id)
+            )
+            return result.rowcount or 0
 
 
 class DBTaskRepo:

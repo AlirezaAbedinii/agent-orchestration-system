@@ -39,11 +39,36 @@ def _database():
 def _clean_tables(_database):
     engine = get_engine()
     with engine.begin() as connection:
-        connection.exec_driver_sql("TRUNCATE tool_invocations, subtasks, plans, tasks CASCADE")
+        connection.exec_driver_sql(
+            "TRUNCATE tool_invocations, subtasks, plans, tasks, memory_events CASCADE"
+        )
     for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
         try:
             with engine.begin() as connection:
                 connection.exec_driver_sql(f'TRUNCATE "{table}"')
         except Exception:
             pass  # checkpointer tables appear on first graph build
+    _purge_redis()
+    _purge_chroma()
     yield
+
+
+def _purge_redis() -> None:
+    import redis
+
+    from orchestrator.config import get_settings
+
+    client = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+    for key in client.scan_iter(match="task:*"):
+        client.delete(key)
+
+
+def _purge_chroma() -> None:
+    """Delete memory items (not collections — live handles cache collection ids)."""
+    from orchestrator.memory.longterm import KINDS, LongTermMemory
+
+    longterm = LongTermMemory()
+    for kind in KINDS:
+        result = longterm.all_items(kind)
+        if result["ids"]:
+            longterm.delete(kind, result["ids"])

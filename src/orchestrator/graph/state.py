@@ -24,6 +24,7 @@ class TaskState(TypedDict, total=False):
     plan: dict | None
     plan_error: str | None
     confidence: float
+    retrieved_memory_ids: list[str]
     subtask_results: Annotated[dict[str, dict], merge_results]
     dispatch_log: Annotated[list[list[str]], operator.add]
     current_wave: list[dict]

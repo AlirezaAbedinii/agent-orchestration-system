@@ -36,9 +36,13 @@ class Settings(BaseSettings):
     model_supervisor: str = "openai:gpt-4o"
     model_specialist: str = "openai:gpt-4o-mini"
     model_reviewer: str = "anthropic:claude-sonnet-5"
+    model_memory: str = "openai:gpt-4o-mini"  # extraction + consolidation summaries
 
     # Memory
     working_memory_ttl_s: int = 86_400  # safety net for crashed runs; normal path clears explicitly
+    memory_retrieval_k: int = 3  # top-k per collection injected into planning
+    memory_half_life_days: float = 14.0  # importance decay half-life
+    mock_embedding_dim: int = 256  # token-hash embedding size under MOCK_LLM
 
     # Tools
     workspace_root: Path = Path("task_workspaces")

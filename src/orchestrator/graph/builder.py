@@ -10,6 +10,8 @@ unit tests can run the full graph without Postgres or provider APIs.
 
 from __future__ import annotations
 
+import logging
+
 from langgraph.graph import END, START, StateGraph
 
 from orchestrator.agents.reviewer import Reviewer
@@ -21,8 +23,12 @@ from orchestrator.graph.state import TaskState
 from orchestrator.llm.clients import LLMClient, get_llm_client
 from orchestrator.llm.router import route
 from orchestrator.planning.decomposer import PlanValidationError
+from orchestrator.memory.extraction import extract_memories, store_extracted
+from orchestrator.memory.retrieval import retrieve_for_planning
 from orchestrator.tools.base import ToolContext
 from orchestrator.tools.registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def build_graph(
@@ -31,6 +37,8 @@ def build_graph(
     repo=None,
     checkpointer=None,
     working=None,
+    longterm=None,
+    memory_events=None,
 ):
     settings = get_settings()
     llm = llm or get_llm_client()
@@ -58,14 +66,34 @@ def build_graph(
         return {}
 
     def plan_node(state: TaskState) -> dict:
+        memories_block = None
+        retrieved_ids: list[str] = []
+        if longterm is not None:
+            try:
+                retrieved = retrieve_for_planning(
+                    longterm,
+                    user_id=state.get("user_id", "default"),
+                    request=state["request"],
+                    task_id=state["task_id"],
+                    events=memory_events,
+                )
+            except Exception as error:  # memory must never block planning
+                logger.warning("Memory retrieval failed for %s: %s", state["task_id"], error)
+                retrieved = None
+            if retrieved is not None:
+                memories_block, retrieved_ids = retrieved.block, retrieved.ids
         try:
-            plan = supervisor.plan(state["request"])
+            plan = supervisor.plan(state["request"], memories=memories_block)
         except PlanValidationError as error:
             repo.set_status(state["task_id"], "failed", error=str(error))
             return {"plan": None, "plan_error": str(error)}
         repo.save_plan(state["task_id"], plan)
         working.set_plan(state["task_id"], plan.model_dump())
-        return {"plan": plan.model_dump(), "confidence": plan.confidence}
+        return {
+            "plan": plan.model_dump(),
+            "confidence": plan.confidence,
+            "retrieved_memory_ids": retrieved_ids,
+        }
 
     def schedule(state: TaskState) -> dict:
         repo.set_status(state["task_id"], "executing")
@@ -174,6 +202,29 @@ def build_graph(
 
     def deliver(state: TaskState) -> dict:
         repo.set_final_output(state["task_id"], state.get("final_output") or "")
+        if longterm is not None:
+            try:
+                results = state.get("subtask_results", {})
+                extracted = extract_memories(
+                    llm,
+                    request=state["request"],
+                    outputs={
+                        sid: r.get("output", "")
+                        for sid, r in results.items()
+                        if r.get("status") == "completed"
+                    },
+                    tools_used={sid: r.get("tool_calls", []) for sid, r in results.items()},
+                    final_output=state.get("final_output") or "",
+                )
+                store_extracted(
+                    longterm,
+                    extracted,
+                    user_id=state.get("user_id", "default"),
+                    task_id=state["task_id"],
+                    events=memory_events,
+                )
+            except Exception as error:  # memory must never fail a delivered task
+                logger.warning("Memory extraction failed for %s: %s", state["task_id"], error)
         # Working memory is scoped to a single task: cleared on completion.
         # Escalated tasks keep theirs — Phase 3 resumes them.
         working.clear(state["task_id"])

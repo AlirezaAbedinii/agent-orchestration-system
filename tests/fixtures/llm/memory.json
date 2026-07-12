@@ -1,0 +1,9 @@
+{
+  "agent": "memory",
+  "response": {
+    "text": "{\"episode\": \"Compared open-source vector databases: web research on Chroma, GitHub star ranking from the demo database, a Python comparison table, and a markdown memo delivered as memo.md.\", \"facts\": [\"Chroma is an open-source embedding database\", \"Qdrant leads the compared vector databases in GitHub stars\"], \"preferences\": [\"User prefers deliverables saved as markdown memo files\"]}",
+    "model": "mock-gpt-4o-mini",
+    "prompt_tokens": 250,
+    "completion_tokens": 90
+  }
+}

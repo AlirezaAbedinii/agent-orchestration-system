@@ -46,6 +46,8 @@ def route(agent: str, producer_provider: str | None = None) -> ModelChoice:
         return _parse(settings.model_supervisor)
     if agent in SPECIALISTS:
         return _parse(settings.model_specialist)
+    if agent == "memory":
+        return _parse(settings.model_memory)
     if agent == "reviewer":
         choice = _parse(settings.model_reviewer)
         if producer_provider and choice.provider == producer_provider:

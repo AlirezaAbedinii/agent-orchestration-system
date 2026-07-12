@@ -23,8 +23,8 @@ Write the final deliverable for the user. Respond with the deliverable text only
 class Supervisor(BaseAgent):
     name = "supervisor"
 
-    def plan(self, request: str) -> ExecutionPlan:
-        return decompose(self.llm, request)
+    def plan(self, request: str, memories: str | None = None) -> ExecutionPlan:
+        return decompose(self.llm, request, memories=memories)
 
     def synthesize(self, request: str, outputs: dict[str, str]) -> str:
         rendered = "\n".join(f"[{sid}]\n{text}\n" for sid, text in sorted(outputs.items()))

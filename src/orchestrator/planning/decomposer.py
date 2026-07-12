@@ -56,8 +56,10 @@ class PlanValidationError(ValueError):
     pass
 
 
-def decompose(llm: LLMClient, request: str) -> ExecutionPlan:
+def decompose(llm: LLMClient, request: str, memories: str | None = None) -> ExecutionPlan:
     prompt = PLAN_PROMPT.format(marker=PLAN_MARKER, request=request, specialists=", ".join(SPECIALISTS))
+    if memories:
+        prompt = f"{prompt}\n{memories}\n"
     response = llm.complete("supervisor", prompt)
     try:
         return parse_structured(response.text, ExecutionPlan)
