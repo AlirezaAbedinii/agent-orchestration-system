@@ -12,6 +12,6 @@ celery_app = Celery(
     "orchestrator",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["orchestrator.workers.run_task"],
+    include=["orchestrator.workers.run_task", "orchestrator.workers.beat_jobs"],
 )
 celery_app.conf.task_track_started = True

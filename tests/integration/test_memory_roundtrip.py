@@ -61,3 +61,30 @@ def test_working_memory_lifecycle_and_extraction():
     created = [e for e in events if e["action"] == "created"]
     total = sum(len(v) for v in memories.values())
     assert len(created) == total
+
+
+def test_dashboard_and_user_data_deletion(client):
+    longterm = LongTermMemory()
+    working = WorkingMemory()
+    events = MemoryEventStore()
+    memory_id = longterm.add("facts", "Alice tracks vector database releases", user_id="alice")
+    longterm.add("preferences", "Alice prefers concise memos", user_id="alice")
+    working.start("task-alice-1", "alice")
+    events.record(user_id="alice", memory_id=memory_id, kind="facts", action="created")
+
+    dashboard = client.get("/memory/users/alice").json()
+    assert dashboard["counts"]["facts"] == 1
+    assert dashboard["counts"]["preferences"] == 1
+    assert dashboard["collections"]["facts"][0]["text"] == "Alice tracks vector database releases"
+    assert any(e["action"] == "created" for e in dashboard["recent_events"])
+
+    deleted = client.delete("/memory/users/alice").json()
+    assert deleted["deleted"]["long_term"]["facts"] == 1
+    assert deleted["deleted"]["working_memory_tasks"] == 1
+    assert deleted["deleted"]["audit_events"] == 1
+
+    # zero ChromaDB entries and zero Redis keys remain for that user
+    remaining = longterm.get_all("alice")
+    assert sum(len(items) for items in remaining.values()) == 0
+    assert not working.exists("task-alice-1")
+    assert client.get("/memory/users/alice").json()["recent_events"] == []

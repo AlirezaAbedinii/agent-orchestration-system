@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     working_memory_ttl_s: int = 86_400  # safety net for crashed runs; normal path clears explicitly
     memory_retrieval_k: int = 3  # top-k per collection injected into planning
     memory_half_life_days: float = 14.0  # importance decay half-life
+    memory_consolidation_similarity: float = 0.9  # cosine sim above which memories merge
+    memory_expiry_days: float = 30.0  # minimum staleness before a memory may expire
+    memory_min_importance: float = 0.2  # expire only below this importance
     mock_embedding_dim: int = 256  # token-hash embedding size under MOCK_LLM
 
     # Tools
