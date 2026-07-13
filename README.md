@@ -2,7 +2,7 @@
 
 > Multi-agent orchestration with tool use, persistent memory, and human-in-the-loop escalation — built as production infrastructure for autonomous AI workflows, not a chatbot demo.
 
-A supervisor agent decomposes a complex request into a dependency-ordered plan, delegates each subtask to a specialized tool-using agent, and routes every deliverable through an independent reviewer before it's accepted. The system remembers: agents share task-scoped working memory while they run, and every completed task is distilled into long-term semantic memory that informs the next plan. And it knows when to stop: low plan confidence, repeated specialist failures, failing reviews, sensitive operations, or an explicit request pause the run mid-graph and hand the decision to a human, who can approve, edit, reject, or take over before execution resumes from the exact point it stopped. Every decision — plan, tool call, review, memory access, escalation, human resolution — is persisted, not just logged to stdout.
+A supervisor agent decomposes a complex request into a dependency-ordered plan, delegates each subtask to a specialized tool-using agent, and routes every deliverable through an independent reviewer before it's accepted. The system remembers: agents share task-scoped working memory while they run, and every completed task is distilled into long-term semantic memory that informs the next plan. And it knows when to stop: low plan confidence, repeated specialist failures, failing reviews, sensitive operations, or an explicit request pause the run mid-graph and hand the decision to a human, who can approve, edit, reject, or take over before execution resumes from the exact point it stopped. Nothing is a black box: every run produces a browsable trace tree with per-decision prompts, latencies, and dollar costs — and any past execution can be replayed deterministically or forked at a chosen step to see how it would have gone differently.
 
 ## Contents
 
@@ -11,6 +11,7 @@ A supervisor agent decomposes a complex request into a dependency-ordered plan, 
 - [Tool registry](#tool-registry)
 - [Memory](#memory)
 - [Human-in-the-loop](#human-in-the-loop)
+- [Observability](#observability)
 - [Tech stack](#tech-stack)
 - [Project status](#project-status)
 - [Getting started](#getting-started)
@@ -122,6 +123,29 @@ Escalation is a first-class graph state, not an afterthought. Five triggers paus
 
 **Review UI** (`make review-ui`, port 8511): the pending queue with trigger/level badges, execution progress, the proposed action with reasoning, relevant memories and similar past decisions, all four resolution actions — and a chat panel that answers clarifying questions grounded in the paused task's checkpointed state before you decide.
 
+## Observability
+
+**Every decision is a span.** Planning, each specialist step, every tool call, every reviewer evaluation, memory retrievals and extractions, and escalations (with the trigger, level, and the human's eventual resolution) become OpenTelemetry spans with custom attributes — exported by a custom `SpanExporter` straight into Postgres, so the trace explorer queries SQL and no collector service is needed. Full LLM prompts and responses are stored per call, referenced by span id.
+
+**Trace explorer** (`make trace-ui`, port 8512):
+
+| Tab | What it shows |
+|---|---|
+| 🌳 Trace | The span tree, color-coded 🟢🟡🔴🟠 by status, with per-node latency and cost; selecting an LLM span expands the exact prompt and response |
+| 💰 Costs | Per task: dollars and tokens by agent/model, tool calls, wall-clock, human review time. Across tasks: cost per task type, most expensive agents, tool usage patterns, escalation-rate trend |
+| ⏪ Replay | Recorded steps, one-click deterministic replay, fork-from-any-step with an edited response, and a side-by-side original-vs-fork diff |
+
+**Replay is real debugging, not a viewer.** A strict replay re-executes the whole graph serving recorded LLM responses — there is no fallback client in that mode, so reproducing a run is provably zero API calls and zero cost. A *fork* replays everything before step k, substitutes your edited response at k, and runs live from there; the comparison view aligns steps by agent + prompt (immune to parallel-branch timing) and marks exactly where execution diverged.
+
+```bash
+curl localhost:8080/traces/<task_id>            # span tree + full llm calls
+curl localhost:8080/traces/<task_id>/costs      # tokens, tools, wall clock, dollars
+curl localhost:8080/traces/aggregates/costs     # the four cross-task rollups
+curl -X POST localhost:8080/replay/<task_id> -H "Content-Type: application/json" \
+  -d '{}'                                       # deterministic replay (zero API calls)
+curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
+```
+
 ## Tech stack
 
 | Layer | Technology | Status |
@@ -136,6 +160,7 @@ Escalation is a first-class graph state, not an afterthought. Five triggers paus
 | Long-term memory | ChromaDB — episodes/facts/preferences with importance scoring | ✅ |
 | Async execution | Celery + Redis — worker wired, beat schedules memory maintenance | 🚧 exercised in the full deployment |
 | Human-in-the-loop | LangGraph interrupts + approval queue, four resolution actions, review UI (Streamlit) | ✅ |
+| Observability | OpenTelemetry → Postgres exporter, trace explorer, cost tracking, replay/fork | ✅ |
 | Observability | OpenTelemetry + trace explorer | ⬜ planned |
 | Containerization | Docker + docker-compose | 🚧 infra services today; full stack later |
 
@@ -147,7 +172,7 @@ Escalation is a first-class graph state, not an afterthought. Five triggers paus
 | 1 | Agent hierarchy, task decomposition, tool registry, LangGraph state machine | ✅ Done |
 | 2 | Working memory (Redis) + long-term semantic memory (ChromaDB) with retrieval, consolidation, expiration | ✅ Done |
 | 3 | Human-in-the-loop: escalation triggers, approval queue on graph interrupts, review UI | ✅ Done |
-| 4 | Execution tracing, trace explorer, cost tracking, replay | ⬜ Planned |
+| 4 | Execution tracing, trace explorer, cost tracking, replay/fork/compare | ✅ Done |
 | 5 | Full containerized stack, demo scenario, end-to-end tests | ⬜ Planned |
 | 6 | Portfolio polish — recorded demo, final narrative | ⬜ Planned |
 
@@ -169,6 +194,7 @@ make sandbox                      # build the code-exec sandbox image
 
 make dev                          # FastAPI on :8080, inline run mode
 make review-ui                    # human review queue on :8511
+make trace-ui                     # trace explorer (spans, costs, replay) on :8512
 ```
 
 ## Usage
@@ -219,19 +245,21 @@ src/orchestrator/
 ├── tools/                  # tool registry + the 5 built-in tools
 ├── memory/                 # working (Redis), long-term (ChromaDB), extraction, retrieval, management
 ├── hitl/                   # escalation triggers, approval levels, queue, notifications
+├── observability/          # tracing (OTel → Postgres exporter), cost tracking, replay
 ├── db/                     # SQLAlchemy models, Alembic migrations, repositories
 └── workers/                # Celery app, task wrapper, beat jobs (memory maintenance)
 
 ui/
-└── review_app.py           # Streamlit human review queue (port 8511)
+├── review_app.py           # Streamlit human review queue (port 8511)
+└── trace_explorer.py       # Streamlit trace/cost/replay explorer (port 8512)
 
 tests/
-├── unit/                   # schemas, registry, tools, graph routing, memory, triggers, queue
-├── integration/            # API → graph → Postgres/Redis/ChromaDB, pause/resume, live smoke
+├── unit/                   # schemas, registry, tools, graph routing, memory, triggers, spans, pricing
+├── integration/            # API → graph → Postgres/Redis/ChromaDB, pause/resume, traces, replay
 └── fixtures/llm/           # recorded LLM responses for deterministic runs
 ```
 
-`observability/` and the trace explorer land in later phases (see [Project status](#project-status)).
+Remaining phases: the fully containerized 7-service stack with a scripted demo scenario, then portfolio polish (see [Project status](#project-status)).
 
 ## Design decisions
 
@@ -245,3 +273,5 @@ tests/
 - **Client-side embeddings.** Vectors are computed in the app (OpenAI in real mode, a deterministic token-hash under `MOCK_LLM`) and handed to Chroma explicitly — retrieval stays testable offline and independent of server-side embedding config.
 - **Escalation enqueues idempotently.** An interrupted LangGraph node re-executes its pre-interrupt code when it resumes, so approval creation is keyed by (task, gate) — the resume pass finds the existing row instead of enqueueing and notifying twice.
 - **Humans get context, not a yes/no button.** Every approval carries the request, plan, completed steps, the exact step in question, the agent's proposed action with reasoning, and relevant memories — plus a chat panel over the checkpointed state — because a reviewer who can't see why will rubber-stamp.
+- **Spans land in Postgres, not a collector.** A custom OpenTelemetry exporter writes spans to the same database everything else lives in — one query joins a decision to its tool calls, its cost, and its approval, and the deployment stays at zero extra observability services.
+- **Replay is provably offline.** Strict replay constructs the client without any fallback, so "no API calls were made" is a structural guarantee, not a promise — and replayed runs are barred from long-term memory so debugging never pollutes what the system has learned.
