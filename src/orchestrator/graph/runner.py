@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from orchestrator.db.repo import DBInvocationStore, DBTaskRepo, MemoryEventStore
+from orchestrator.db.repo import DBInvocationStore, DBLLMCallStore, DBTaskRepo, MemoryEventStore
 from orchestrator.graph.builder import build_graph
 from orchestrator.graph.checkpointing import get_checkpointer
 from orchestrator.hitl.queue import ApprovalQueue
 from orchestrator.llm.clients import get_llm_client
 from orchestrator.memory.longterm import LongTermMemory
 from orchestrator.memory.working import WorkingMemory
+from orchestrator.observability.tracing import TracedLLMClient, setup_tracing, task_run_span
 from orchestrator.tools.defaults import build_default_registry
 
 logger = logging.getLogger(__name__)
@@ -19,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 @lru_cache
 def get_production_graph():
+    setup_tracing()
     return build_graph(
-        llm=get_llm_client(),
+        llm=TracedLLMClient(get_llm_client(), calls=DBLLMCallStore()),
         registry=build_default_registry(DBInvocationStore()),
         repo=DBTaskRepo(),
         checkpointer=get_checkpointer(),
@@ -46,9 +48,10 @@ def run_task(task_id: str) -> None:
         "dispatch_log": [],
     }
     try:
-        get_production_graph().invoke(
-            initial, config={"configurable": {"thread_id": task_id}}
-        )
+        with task_run_span(task_id, "task"):
+            get_production_graph().invoke(
+                initial, config={"configurable": {"thread_id": task_id}}
+            )
     except Exception as error:
         logger.exception("Task %s crashed", task_id)
         repo.set_status(task_id, "failed", error=str(error))
@@ -59,9 +62,10 @@ def resume_task(task_id: str, decision: dict) -> None:
     from langgraph.types import Command
 
     try:
-        get_production_graph().invoke(
-            Command(resume=decision), config={"configurable": {"thread_id": task_id}}
-        )
+        with task_run_span(task_id, "task:resume"):
+            get_production_graph().invoke(
+                Command(resume=decision), config={"configurable": {"thread_id": task_id}}
+            )
     except Exception as error:
         logger.exception("Task %s crashed while resuming", task_id)
         DBTaskRepo().set_status(task_id, "failed", error=str(error))

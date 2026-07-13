@@ -11,7 +11,14 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy.orm import Session, sessionmaker
 
-from orchestrator.db.models import MemoryEvent, PlanRow, SubtaskRow, Task, ToolInvocation
+from orchestrator.db.models import (
+    LLMCallRow,
+    MemoryEvent,
+    PlanRow,
+    SubtaskRow,
+    Task,
+    ToolInvocation,
+)
 from orchestrator.db.session import get_sessionmaker
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools.base import InvocationRecord
@@ -49,6 +56,47 @@ class DBInvocationStore:
                     ToolInvocation.status.in_(("success", "failure")),
                 )
             )
+
+
+class DBLLMCallStore:
+    """Durable record of every LLM call (prompt, response, usage, cost)."""
+
+    def __init__(self, session_factory: sessionmaker[Session] | None = None):
+        self._sessions = session_factory or get_sessionmaker()
+
+    def record(self, **fields) -> None:
+        with self._sessions() as session, session.begin():
+            session.add(LLMCallRow(**fields))
+
+    @staticmethod
+    def _to_dict(row: LLMCallRow) -> dict:
+        return {
+            "id": row.id,
+            "span_id": row.span_id,
+            "task_id": row.task_id,
+            "agent": row.agent,
+            "model": row.model,
+            "prompt": row.prompt,
+            "response": row.response,
+            "prompt_tokens": row.prompt_tokens,
+            "completion_tokens": row.completion_tokens,
+            "cost_usd": row.cost_usd,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
+    def for_task(self, task_id: str) -> list[dict]:
+        with self._sessions() as session:
+            rows = session.scalars(
+                sa.select(LLMCallRow)
+                .where(LLMCallRow.task_id == task_id)
+                .order_by(LLMCallRow.created_at, LLMCallRow.id)
+            )
+            return [self._to_dict(row) for row in rows]
+
+    def get(self, llm_call_id: str) -> dict | None:
+        with self._sessions() as session:
+            row = session.get(LLMCallRow, llm_call_id)
+            return self._to_dict(row) if row else None
 
 
 class MemoryEventStore:
@@ -111,9 +159,20 @@ class DBTaskRepo:
     def __init__(self, session_factory: sessionmaker[Session] | None = None):
         self._sessions = session_factory or get_sessionmaker()
 
-    def create_task(self, request: str, user_id: str = "default", require_human_review: bool = False) -> str:
+    def create_task(
+        self,
+        request: str,
+        user_id: str = "default",
+        require_human_review: bool = False,
+        replay_of: str | None = None,
+    ) -> str:
         with self._sessions() as session, session.begin():
-            task = Task(request=request, user_id=user_id, require_human_review=require_human_review)
+            task = Task(
+                request=request,
+                user_id=user_id,
+                require_human_review=require_human_review,
+                replay_of=replay_of,
+            )
             session.add(task)
             session.flush()
             return task.id
@@ -217,6 +276,7 @@ class DBTaskRepo:
                 "user_id": task.user_id,
                 "status": task.status,
                 "require_human_review": task.require_human_review,
+                "replay_of": task.replay_of,
                 "plan": plan.raw if plan is not None else None,
                 "confidence": plan.confidence if plan is not None else None,
                 "subtasks": subtasks,

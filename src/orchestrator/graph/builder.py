@@ -48,6 +48,7 @@ from orchestrator.llm.clients import LLMClient, get_llm_client
 from orchestrator.llm.router import route
 from orchestrator.memory.extraction import extract_memories, store_extracted
 from orchestrator.memory.retrieval import retrieve_for_planning
+from orchestrator.observability.tracing import child_span, node_span, set_attr
 from orchestrator.planning.decomposer import PlanValidationError
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools.base import ToolContext
@@ -139,39 +140,45 @@ def build_graph(
     # --- nodes -------------------------------------------------------------
 
     def intake(state: TaskState) -> dict:
-        repo.set_status(state["task_id"], "planning")
-        working.start(state["task_id"], state.get("user_id", "default"))
-        return {}
+        with node_span(state["task_id"], "intake"):
+            repo.set_status(state["task_id"], "planning")
+            working.start(state["task_id"], state.get("user_id", "default"))
+            return {}
 
     def plan_node(state: TaskState) -> dict:
-        memories_block = None
-        retrieved_ids: list[str] = []
-        if longterm is not None:
+        with node_span(state["task_id"], "plan", kind="planning") as span:
+            memories_block = None
+            retrieved_ids: list[str] = []
+            if longterm is not None:
+                try:
+                    retrieved = retrieve_for_planning(
+                        longterm,
+                        user_id=state.get("user_id", "default"),
+                        request=state["request"],
+                        task_id=state["task_id"],
+                        events=memory_events,
+                    )
+                except Exception as error:  # memory must never block planning
+                    logger.warning("Memory retrieval failed for %s: %s", state["task_id"], error)
+                    retrieved = None
+                if retrieved is not None:
+                    memories_block, retrieved_ids = retrieved.block, retrieved.ids
+            set_attr(span, "memories_injected", len(retrieved_ids))
             try:
-                retrieved = retrieve_for_planning(
-                    longterm,
-                    user_id=state.get("user_id", "default"),
-                    request=state["request"],
-                    task_id=state["task_id"],
-                    events=memory_events,
-                )
-            except Exception as error:  # memory must never block planning
-                logger.warning("Memory retrieval failed for %s: %s", state["task_id"], error)
-                retrieved = None
-            if retrieved is not None:
-                memories_block, retrieved_ids = retrieved.block, retrieved.ids
-        try:
-            plan = supervisor.plan(state["request"], memories=memories_block)
-        except PlanValidationError as error:
-            repo.set_status(state["task_id"], "failed", error=str(error))
-            return {"plan": None, "plan_error": str(error)}
-        repo.save_plan(state["task_id"], plan)
-        working.set_plan(state["task_id"], plan.model_dump())
-        return {
-            "plan": plan.model_dump(),
-            "confidence": plan.confidence,
-            "retrieved_memory_ids": retrieved_ids,
-        }
+                plan = supervisor.plan(state["request"], memories=memories_block)
+            except PlanValidationError as error:
+                span.set_attribute("orchestrator.status", "failure")
+                repo.set_status(state["task_id"], "failed", error=str(error))
+                return {"plan": None, "plan_error": str(error)}
+            repo.save_plan(state["task_id"], plan)
+            working.set_plan(state["task_id"], plan.model_dump())
+            set_attr(span, "confidence", plan.confidence)
+            set_attr(span, "subtask_count", len(plan.subtasks))
+            return {
+                "plan": plan.model_dump(),
+                "confidence": plan.confidence,
+                "retrieved_memory_ids": retrieved_ids,
+            }
 
     def escalate_plan(state: TaskState) -> dict:
         escalation = plan_escalation(
@@ -180,6 +187,13 @@ def build_graph(
             settings.plan_confidence_threshold,
         )
         level = level_for(escalation.trigger)
+        with node_span(
+            state["task_id"], "escalate:plan", kind="escalation",
+            trigger=escalation.trigger.value, level=level.value,
+        ) as espan:
+            return _escalate_plan_body(state, escalation, level, espan)
+
+    def _escalate_plan_body(state: TaskState, escalation, level, espan) -> dict:
         proposed = {"type": "execute_plan", "plan": state.get("plan")}
         package = _package(
             state, current_step={"gate": "plan"}, proposed_action=proposed, reasoning=escalation.reason
@@ -198,10 +212,12 @@ def build_graph(
 
         repo.set_status(state["task_id"], "awaiting_approval")
         approval_id, _ = approvals.ensure(level=level.value, **common)
+        set_attr(espan, "approval_id", approval_id)
         decision = interrupt(
             {"approval_id": approval_id, "trigger": escalation.trigger.value, "level": level.value, **package}
         )
         action, payload, notes = _decision_parts(decision)
+        set_attr(espan, "resolution", action)
 
         if action == "reject":
             repo.set_status(state["task_id"], "rejected", error=f"Plan rejected by reviewer: {notes}")
@@ -226,12 +242,14 @@ def build_graph(
         return {"hitl_decision": {"gate": "plan", "action": "approve"}}
 
     def schedule(state: TaskState) -> dict:
-        repo.set_status(state["task_id"], "executing")
-        wave = compute_wave(state)
-        update: dict = {"current_wave": wave}
-        if wave:
-            update["dispatch_log"] = [[payload["spec"]["id"] for payload in wave]]
-        return update
+        with node_span(state["task_id"], "schedule") as span:
+            repo.set_status(state["task_id"], "executing")
+            wave = compute_wave(state)
+            set_attr(span, "wave", [payload["spec"]["id"] for payload in wave])
+            update: dict = {"current_wave": wave}
+            if wave:
+                update["dispatch_log"] = [[payload["spec"]["id"] for payload in wave]]
+            return update
 
     def execute(payload: dict) -> dict:
         spec = payload["spec"]
@@ -296,28 +314,45 @@ def build_graph(
                 proposed_action=proposed,
                 reasoning=escalation.reason,
             )
-            if level is ApprovalLevel.NOTIFY:
-                approvals.record_notify(**common)
-                return {"action": "approve"}
-            repo.set_status(task_id, "awaiting_approval")
-            approval_id, _ = approvals.ensure(level=level.value, **common)
-            decision = interrupt(
-                {"approval_id": approval_id, "trigger": escalation.trigger.value, "level": level.value, **package}
-            )
-            repo.set_status(task_id, "executing")
-            return decision or {"action": "approve"}
+            with child_span(
+                f"approval:tool:{tool_name}", kind="escalation",
+                trigger=escalation.trigger.value, level=level.value, tool=tool_name,
+            ) as espan:
+                if level is ApprovalLevel.NOTIFY:
+                    approvals.record_notify(**common)
+                    set_attr(espan, "resolution", "notified")
+                    return {"action": "approve"}
+                repo.set_status(task_id, "awaiting_approval")
+                approval_id, _ = approvals.ensure(level=level.value, **common)
+                set_attr(espan, "approval_id", approval_id)
+                decision = interrupt(
+                    {"approval_id": approval_id, "trigger": escalation.trigger.value, "level": level.value, **package}
+                )
+                repo.set_status(task_id, "executing")
+                set_attr(espan, "resolution", (decision or {}).get("action", "approve"))
+                return decision or {"action": "approve"}
 
+        with node_span(
+            task_id, f"execute:{sid}", kind="specialist",
+            sid=sid, specialist=spec["specialist"], attempt=attempts,
+        ) as span:
+            return _execute_body(payload, spec, sid, task_id, base, attempts, ctx, tool_gate, span)
+
+    def _execute_body(payload, spec, sid, task_id, base, attempts, ctx, tool_gate, span) -> dict:
         repo.record_subtask(task_id, sid, status="running", attempts=attempts)
         try:
             result = specialists[spec["specialist"]].execute(
                 spec, payload.get("inputs", {}), payload.get("feedback"), ctx, gate=tool_gate
             )
-            verdict = reviewer.review(
-                spec["description"],
-                spec.get("expected_output_format", "plain text"),
-                result.output,
-                producer_provider=route(spec["specialist"]).provider,
-            )
+            with child_span(f"review:{sid}", kind="review", sid=sid) as review_span:
+                verdict = reviewer.review(
+                    spec["description"],
+                    spec.get("expected_output_format", "plain text"),
+                    result.output,
+                    producer_provider=route(spec["specialist"]).provider,
+                )
+                set_attr(review_span, "score", verdict.score)
+                set_attr(review_span, "feedback", verdict.feedback[:300])
         except GraphInterrupt:
             # the sensitive-tool gate paused the run — not a specialist failure
             raise
@@ -332,9 +367,15 @@ def build_graph(
             }
             repo.record_subtask(task_id, sid, status="failed", attempts=attempts, error=str(error))
             working.record_error(task_id, sid, str(error))
+            span.set_attribute("orchestrator.status", "failure")
+            set_attr(span, "error", str(error)[:300])
             return {"subtask_results": {sid: entry}}
 
+        set_attr(span, "tool_calls", result.tool_calls)
+        set_attr(span, "review_score", verdict.score)
         approved = verdict.score >= settings.review_score_threshold
+        if not approved:
+            span.set_attribute("orchestrator.status", "warning")
         entry = {
             **base,
             "output": result.output,
@@ -362,27 +403,37 @@ def build_graph(
         return {"subtask_results": {sid: entry}}
 
     def gather(state: TaskState) -> dict:
-        for sid in sorted(state.get("subtask_results", {})):
-            result = state["subtask_results"][sid]
-            escalation = subtask_escalation(
-                sid,
-                result,
-                review_threshold=settings.review_score_threshold,
-                max_retries=settings.max_specialist_retries,
-            )
-            if escalation:
-                return {
-                    "needs_escalation": True,
-                    "escalation": {"trigger": escalation.trigger.value, "reason": escalation.reason, "sid": sid},
-                    "escalation_reason": escalation.reason,
-                }
-        return {"needs_escalation": False, "escalation": None}
+        with node_span(state["task_id"], "gather") as span:
+            for sid in sorted(state.get("subtask_results", {})):
+                result = state["subtask_results"][sid]
+                escalation = subtask_escalation(
+                    sid,
+                    result,
+                    review_threshold=settings.review_score_threshold,
+                    max_retries=settings.max_specialist_retries,
+                )
+                if escalation:
+                    span.set_attribute("orchestrator.status", "warning")
+                    set_attr(span, "escalating", escalation.trigger.value)
+                    return {
+                        "needs_escalation": True,
+                        "escalation": {"trigger": escalation.trigger.value, "reason": escalation.reason, "sid": sid},
+                        "escalation_reason": escalation.reason,
+                    }
+            return {"needs_escalation": False, "escalation": None}
 
     def escalate_subtask(state: TaskState) -> dict:
         info = state["escalation"]
         sid = info["sid"]
         trigger = Trigger(info["trigger"])
         level = level_for(trigger)
+        with node_span(
+            state["task_id"], f"escalate:subtask:{sid}", kind="escalation",
+            trigger=trigger.value, level=level.value, sid=sid,
+        ) as espan:
+            return _escalate_subtask_body(state, info, sid, trigger, level, espan)
+
+    def _escalate_subtask_body(state: TaskState, info, sid, trigger, level, espan) -> dict:
         result = state["subtask_results"][sid]
         spec = next(s for s in state["plan"]["subtasks"] if s["id"] == sid)
         suggested = result.get("feedback") or "Try a different approach."
@@ -422,10 +473,12 @@ def build_graph(
 
         repo.set_status(state["task_id"], "awaiting_approval")
         approval_id, _ = approvals.ensure(level=level.value, **common)
+        set_attr(espan, "approval_id", approval_id)
         decision = interrupt(
             {"approval_id": approval_id, "trigger": trigger.value, "level": level.value, **package}
         )
         action, payload, notes = _decision_parts(decision)
+        set_attr(espan, "resolution", action)
 
         if action == "reject":
             repo.set_status(
@@ -456,81 +509,93 @@ def build_graph(
         }
 
     def synthesize(state: TaskState) -> dict:
-        outputs = {
-            sid: result.get("output", "")
-            for sid, result in state.get("subtask_results", {}).items()
-            if result.get("status") == "completed"
-        }
-        return {"final_output": supervisor.synthesize(state["request"], outputs)}
+        with node_span(state["task_id"], "synthesize", kind="synthesis") as span:
+            outputs = {
+                sid: result.get("output", "")
+                for sid, result in state.get("subtask_results", {}).items()
+                if result.get("status") == "completed"
+            }
+            set_attr(span, "inputs", sorted(outputs))
+            return {"final_output": supervisor.synthesize(state["request"], outputs)}
 
     def final_gate(state: TaskState) -> dict:
         if not state.get("require_human_review"):
             return {}
-        proposed = {"type": "deliver", "final_output": state.get("final_output")}
-        reasoning = "User requested review of the final deliverable"
-        package = _package(
-            state, current_step={"gate": "final"}, proposed_action=proposed, reasoning=reasoning
-        )
-        repo.set_status(state["task_id"], "awaiting_approval")
-        approval_id, _ = approvals.ensure(
-            task_id=state["task_id"],
-            gate_key="final",
-            trigger=Trigger.USER_REQUESTED.value,
-            level=ApprovalLevel.APPROVE_ACTION.value,
-            context=package,
-            proposed_action=proposed,
-            reasoning=reasoning,
-        )
-        decision = interrupt(
-            {
-                "approval_id": approval_id,
-                "trigger": Trigger.USER_REQUESTED.value,
-                "level": ApprovalLevel.APPROVE_ACTION.value,
-                **package,
-            }
-        )
-        action, payload, notes = _decision_parts(decision)
-        if action == "reject":
-            repo.set_status(
-                state["task_id"], "rejected", error=f"Final deliverable rejected by reviewer: {notes}"
+        with node_span(
+            state["task_id"], "escalate:final", kind="escalation",
+            trigger=Trigger.USER_REQUESTED.value, level=ApprovalLevel.APPROVE_ACTION.value,
+        ) as espan:
+            proposed = {"type": "deliver", "final_output": state.get("final_output")}
+            reasoning = "User requested review of the final deliverable"
+            package = _package(
+                state, current_step={"gate": "final"}, proposed_action=proposed, reasoning=reasoning
             )
-            return {"hitl_decision": {"gate": "final", "action": "reject"}}
-        if action in ("modify", "take_over"):
-            return {
-                "hitl_decision": {"gate": "final", "action": action},
-                "final_output": payload.get("final_output", state.get("final_output")),
-            }
-        return {"hitl_decision": {"gate": "final", "action": "approve"}}
+            repo.set_status(state["task_id"], "awaiting_approval")
+            approval_id, _ = approvals.ensure(
+                task_id=state["task_id"],
+                gate_key="final",
+                trigger=Trigger.USER_REQUESTED.value,
+                level=ApprovalLevel.APPROVE_ACTION.value,
+                context=package,
+                proposed_action=proposed,
+                reasoning=reasoning,
+            )
+            set_attr(espan, "approval_id", approval_id)
+            decision = interrupt(
+                {
+                    "approval_id": approval_id,
+                    "trigger": Trigger.USER_REQUESTED.value,
+                    "level": ApprovalLevel.APPROVE_ACTION.value,
+                    **package,
+                }
+            )
+            action, payload, notes = _decision_parts(decision)
+            set_attr(espan, "resolution", action)
+            if action == "reject":
+                repo.set_status(
+                    state["task_id"], "rejected", error=f"Final deliverable rejected by reviewer: {notes}"
+                )
+                return {"hitl_decision": {"gate": "final", "action": "reject"}}
+            if action in ("modify", "take_over"):
+                return {
+                    "hitl_decision": {"gate": "final", "action": action},
+                    "final_output": payload.get("final_output", state.get("final_output")),
+                }
+            return {"hitl_decision": {"gate": "final", "action": "approve"}}
 
     def deliver(state: TaskState) -> dict:
-        repo.set_final_output(state["task_id"], state.get("final_output") or "")
-        if longterm is not None:
-            try:
-                results = state.get("subtask_results", {})
-                extracted = extract_memories(
-                    llm,
-                    request=state["request"],
-                    outputs={
-                        sid: r.get("output", "")
-                        for sid, r in results.items()
-                        if r.get("status") == "completed"
-                    },
-                    tools_used={sid: r.get("tool_calls", []) for sid, r in results.items()},
-                    final_output=state.get("final_output") or "",
-                )
-                store_extracted(
-                    longterm,
-                    extracted,
-                    user_id=state.get("user_id", "default"),
-                    task_id=state["task_id"],
-                    events=memory_events,
-                )
-            except Exception as error:  # memory must never fail a delivered task
-                logger.warning("Memory extraction failed for %s: %s", state["task_id"], error)
-        # Working memory is scoped to a single task: cleared on completion.
-        # Escalated tasks keep theirs — they resume from the checkpoint.
-        working.clear(state["task_id"])
-        return {}
+        with node_span(state["task_id"], "deliver"):
+            repo.set_final_output(state["task_id"], state.get("final_output") or "")
+            if longterm is not None:
+                try:
+                    with child_span("memory:extract", kind="memory") as memory_span:
+                        results = state.get("subtask_results", {})
+                        extracted = extract_memories(
+                            llm,
+                            request=state["request"],
+                            outputs={
+                                sid: r.get("output", "")
+                                for sid, r in results.items()
+                                if r.get("status") == "completed"
+                            },
+                            tools_used={sid: r.get("tool_calls", []) for sid, r in results.items()},
+                            final_output=state.get("final_output") or "",
+                        )
+                        stored = store_extracted(
+                            longterm,
+                            extracted,
+                            user_id=state.get("user_id", "default"),
+                            task_id=state["task_id"],
+                            events=memory_events,
+                        )
+                        set_attr(memory_span, "stored_count", len(stored))
+                        set_attr(memory_span, "memory_ids", [mid for _, mid in stored])
+                except Exception as error:  # memory must never fail a delivered task
+                    logger.warning("Memory extraction failed for %s: %s", state["task_id"], error)
+            # Working memory is scoped to a single task: cleared on completion.
+            # Escalated tasks keep theirs — they resume from the checkpoint.
+            working.clear(state["task_id"])
+            return {}
 
     # --- graph -------------------------------------------------------------
 

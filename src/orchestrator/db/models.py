@@ -38,11 +38,49 @@ class Task(Base):
     require_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
     final_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    replay_of: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SpanRow(Base):
+    """Exported OpenTelemetry spans (custom exporter; the trace explorer reads these)."""
+
+    __tablename__ = "spans"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(String(32), index=True)
+    parent_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    kind: Mapped[str] = mapped_column(String(16))
+    agent: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(String(16))
+    attributes: Mapped[dict] = mapped_column(JSON, default=dict)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[float] = mapped_column(Float)
+
+
+class LLMCallRow(Base):
+    """Full prompt/response per LLM call, referenced by span id; replay reads these."""
+
+    __tablename__ = "llm_calls"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    span_id: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    task_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    agent: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(64))
+    prompt: Mapped[str] = mapped_column(Text)
+    response: Mapped[str] = mapped_column(Text)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class PlanRow(Base):

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from orchestrator.config import get_settings
 from orchestrator.memory.longterm import KINDS, LongTermMemory
+from orchestrator.observability.tracing import child_span, set_attr
 
 # Stable marker; tests assert the planning prompt contains it.
 MEMORIES_MARKER = "Relevant memories from past tasks"
@@ -33,23 +34,26 @@ def retrieve_for_planning(
     events=None,
 ) -> PlanningMemories | None:
     k = k or get_settings().memory_retrieval_k
-    hits = []
-    for kind in KINDS:
-        hits.extend(longterm.query(kind, request, user_id=user_id, k=k))
-    if not hits:
-        return None
+    with child_span("memory:retrieve", kind="memory", user_id=user_id) as span:
+        hits = []
+        for kind in KINDS:
+            hits.extend(longterm.query(kind, request, user_id=user_id, k=k))
+        set_attr(span, "retrieved_count", len(hits))
+        if not hits:
+            return None
 
-    by_kind: dict[str, list[str]] = defaultdict(list)
-    for hit in hits:
-        by_kind[hit.kind].append(hit.id)
-    for kind, ids in by_kind.items():
-        longterm.bump_access(kind, ids)  # retrieval is access: importance goes up
-        if events is not None:
-            for memory_id in ids:
-                events.record(
-                    user_id=user_id, memory_id=memory_id, kind=kind, action="retrieved", task_id=task_id
-                )
+        by_kind: dict[str, list[str]] = defaultdict(list)
+        for hit in hits:
+            by_kind[hit.kind].append(hit.id)
+        for kind, ids in by_kind.items():
+            longterm.bump_access(kind, ids)  # retrieval is access: importance goes up
+            if events is not None:
+                for memory_id in ids:
+                    events.record(
+                        user_id=user_id, memory_id=memory_id, kind=kind, action="retrieved", task_id=task_id
+                    )
 
-    lines = "\n".join(f"- ({hit.kind}) {hit.text}" for hit in hits)
-    block = f"{MEMORIES_MARKER} (use them to inform the plan):\n{lines}"
-    return PlanningMemories(block=block, ids=[hit.id for hit in hits])
+        set_attr(span, "memory_ids", [hit.id for hit in hits])
+        lines = "\n".join(f"- ({hit.kind}) {hit.text}" for hit in hits)
+        block = f"{MEMORIES_MARKER} (use them to inform the plan):\n{lines}"
+        return PlanningMemories(block=block, ids=[hit.id for hit in hits])

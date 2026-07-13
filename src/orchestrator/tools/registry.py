@@ -10,6 +10,7 @@ import time
 
 from pydantic import ValidationError
 
+from orchestrator.observability.tracing import child_span, set_attr
 from orchestrator.tools.base import (
     InvocationRecord,
     InvocationStore,
@@ -61,8 +62,24 @@ class ToolRegistry:
             lines.append(f"- {spec.name}: {spec.description} (arguments: {fields})")
         return "\n".join(lines) if lines else "(no tools available)"
 
+    @staticmethod
+    def _span_status(exc: BaseException) -> str:
+        if isinstance(exc, (UnknownToolError, ToolPermissionError)):
+            return "rejected"
+        if isinstance(exc, RateLimitExceededError):
+            return "rate_limited"
+        return "failure"
+
     def invoke(self, tool_name: str, arguments: dict, ctx: ToolContext) -> dict:
         """Run a tool for a specialist; returns the output model as a dict."""
+        with child_span(
+            f"tool:{tool_name}", kind="tool", error_status=self._span_status,
+            tool=tool_name, specialist=ctx.specialist, sid=ctx.subtask_id,
+        ) as span:
+            output = self._invoke_inner(tool_name, arguments, ctx, span)
+            return output
+
+    def _invoke_inner(self, tool_name: str, arguments: dict, ctx: ToolContext, span) -> dict:
         log = lambda **kw: self._store.record(  # noqa: E731
             InvocationRecord(
                 task_id=ctx.task_id,
@@ -110,4 +127,7 @@ class ToolRegistry:
         latency = (time.perf_counter() - started) * 1000
         output_dict = output.model_dump(mode="json")
         log(status="success", output=output_dict, latency_ms=latency, sensitive=sensitive)
+        set_attr(span, "latency_ms", latency)
+        set_attr(span, "sensitive", sensitive)
+        set_attr(span, "arguments", arguments)
         return output_dict
