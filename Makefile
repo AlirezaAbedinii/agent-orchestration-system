@@ -1,4 +1,4 @@
-.PHONY: infra dev test migrate seed sandbox review-ui
+.PHONY: infra dev test migrate seed sandbox review-ui trace-ui
 
 VENV ?= .venv
 UVICORN ?= $(VENV)/bin/uvicorn
@@ -28,3 +28,6 @@ sandbox:  ## build the code-execution sandbox image
 
 review-ui:  ## human review queue UI (port 8511; 8501 tends to be taken)
 	ORCHESTRATOR_API_URL=http://localhost:8080 $(VENV)/bin/streamlit run ui/review_app.py --server.port 8511 --server.headless true
+
+trace-ui:  ## trace explorer: span trees, costs, replay (port 8512)
+	ORCHESTRATOR_API_URL=http://localhost:8080 $(VENV)/bin/streamlit run ui/trace_explorer.py --server.port 8512 --server.headless true

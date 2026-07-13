@@ -47,11 +47,12 @@ def run_task(task_id: str) -> None:
         "subtask_results": {},
         "dispatch_log": [],
     }
+    # build (and set up tracing) before opening the root span — a root started
+    # under the default no-op provider would never be recorded
+    graph = get_production_graph()
     try:
         with task_run_span(task_id, "task"):
-            get_production_graph().invoke(
-                initial, config={"configurable": {"thread_id": task_id}}
-            )
+            graph.invoke(initial, config={"configurable": {"thread_id": task_id}})
     except Exception as error:
         logger.exception("Task %s crashed", task_id)
         repo.set_status(task_id, "failed", error=str(error))
@@ -61,9 +62,10 @@ def resume_task(task_id: str, decision: dict) -> None:
     """Resume a paused task from its checkpoint with the human decision."""
     from langgraph.types import Command
 
+    graph = get_production_graph()
     try:
         with task_run_span(task_id, "task:resume"):
-            get_production_graph().invoke(
+            graph.invoke(
                 Command(resume=decision), config={"configurable": {"thread_id": task_id}}
             )
     except Exception as error:

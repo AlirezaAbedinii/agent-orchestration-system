@@ -104,9 +104,10 @@ def run_replay(
     from orchestrator.hitl.queue import ApprovalQueue
     from orchestrator.llm.clients import get_llm_client
     from orchestrator.memory.working import WorkingMemory
-    from orchestrator.observability.tracing import TracedLLMClient, task_run_span
+    from orchestrator.observability.tracing import TracedLLMClient, setup_tracing, task_run_span
     from orchestrator.tools.defaults import build_default_registry
 
+    setup_tracing()
     repo = DBTaskRepo()
     try:
         records = DBLLMCallStore().for_task(original_task_id)
