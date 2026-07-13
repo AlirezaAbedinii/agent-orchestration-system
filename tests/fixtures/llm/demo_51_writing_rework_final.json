@@ -1,0 +1,8 @@
+{
+  "agent": "writing",
+  "match": ["recommendation memo", "file_write returned"],
+  "response": {
+    "text": "{\"action\": \"final\", \"output\": \"MEMO-DELIVERED: recommendation.md — Recommendation: Qdrant (24k stars [1]), with Chroma [2] for embedded Python use and Weaviate [3] for hybrid search. Sources: [1] https://github.com/qdrant/qdrant [2] https://github.com/chroma-core/chroma [3] https://github.com/weaviate/weaviate\"}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 760, "completion_tokens": 130
+  }
+}

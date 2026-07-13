@@ -1,0 +1,8 @@
+{
+  "agent": "research",
+  "match": ["Research Qdrant", "[mock] result for"],
+  "response": {
+    "text": "{\"action\": \"final\", \"output\": \"QDRANT-FACTS: Qdrant is a Rust vector search engine with strong filtering and the largest community traction of the three; Apache-2.0 licensed. Source: https://github.com/qdrant/qdrant\"}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 380, "completion_tokens": 70
+  }
+}

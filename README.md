@@ -55,7 +55,7 @@ flowchart LR
     Human -.->|approve / modify / reject / take over| Graph
 ```
 
-1. **Intake** — a request comes in via `POST /tasks`; a task row is created and the graph runs (inline in-process today, Celery-backed in the full deployment).
+1. **Intake** — a request comes in via `POST /tasks`; a task row is created and the graph runs (inline in-process for development, Celery-backed in the composed stack).
 2. **Plan** — the supervisor first retrieves similar past episodes, domain facts, and user preferences from long-term memory and plans with them in context. It decomposes the request into subtasks with dependencies, assigns each to a specialist, and reports a confidence score. Plans are schema-validated (unique ids, resolvable dependencies, no cycles) and retried once if invalid.
 3. **Schedule & execute** — independent subtasks run in parallel; each specialist works through a bounded tool-use loop, calling only the tools it owns. Outputs, intermediate results, and errors land in shared working memory as they happen.
 4. **Review** — every deliverable is scored 1–5 by a reviewer running on a *different model provider* than the specialist that produced it, so a shared provider blind spot can't rubber-stamp its own output. Rejections go back to the specialist with feedback (up to 2 rework cycles).
@@ -158,11 +158,10 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | Persistent state | PostgreSQL — tasks, plans, subtasks, tool invocations, memory audit | ✅ |
 | Short-term memory | Redis — task-scoped working memory | ✅ |
 | Long-term memory | ChromaDB — episodes/facts/preferences with importance scoring | ✅ |
-| Async execution | Celery + Redis — worker wired, beat schedules memory maintenance | 🚧 exercised in the full deployment |
+| Async execution | Celery + Redis — workers consume runs/resumes/replays, beat schedules memory maintenance | ✅ |
 | Human-in-the-loop | LangGraph interrupts + approval queue, four resolution actions, review UI (Streamlit) | ✅ |
 | Observability | OpenTelemetry → Postgres exporter, trace explorer, cost tracking, replay/fork | ✅ |
-| Observability | OpenTelemetry + trace explorer | ⬜ planned |
-| Containerization | Docker + docker-compose | 🚧 infra services today; full stack later |
+| Containerization | 7-service docker-compose with healthchecks, dependency ordering, auto-migration/seed | ✅ |
 
 ## Project status
 
@@ -173,29 +172,60 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | 2 | Working memory (Redis) + long-term semantic memory (ChromaDB) with retrieval, consolidation, expiration | ✅ Done |
 | 3 | Human-in-the-loop: escalation triggers, approval queue on graph interrupts, review UI | ✅ Done |
 | 4 | Execution tracing, trace explorer, cost tracking, replay/fork/compare | ✅ Done |
-| 5 | Full containerized stack, demo scenario, end-to-end tests | ⬜ Planned |
+| 5 | Full containerized stack, demo scenario, end-to-end tests | ✅ Done |
 | 6 | Portfolio polish — recorded demo, final narrative | ⬜ Planned |
 
 ## Getting started
 
-**Prerequisites:** Docker, Python 3.11+, [uv](https://docs.astral.sh/uv/), an OpenAI API key and an Anthropic API key (optional if you only run with `MOCK_LLM=1`).
+**Prerequisites:** Docker + docker-compose, and an OpenAI + Anthropic API key — or no keys at all: with `MOCK_LLM=1` the whole system (including the demo) runs on recorded fixtures through the same orchestration path.
+
+### The whole system, one command
 
 ```bash
 git clone <this-repo> && cd agent-orchestration-system
-cp .env.example .env              # fill in API keys, or leave MOCK_LLM=1 for a keyless run
+cp .env.example .env              # add API keys — or set MOCK_LLM=1 for a keyless run
+docker compose up -d --build      # full stack; migrations + demo seed run automatically
+make demo                         # showcase scenario — pauses once for your approval
+```
 
+| Service | Host port | Role |
+|---|---|---|
+| `api` | 8080 | FastAPI orchestration API |
+| `worker` | — | Celery worker + beat (`RUN_MODE=celery`), runs the graphs |
+| `postgres` | 5432 | tasks, plans, approvals, spans, checkpoints |
+| `redis` | 6379 | working memory + Celery broker |
+| `chromadb` | 8010 → 8000 | long-term semantic memory |
+| `review-ui` | 8511 → 8501 | human approval queue |
+| `trace-explorer` | 8512 → 8502 | traces, costs, replay |
+
+Two one-shot helpers run at startup and exit: `migrate` (Alembic upgrade + demo-schema seed, gating `api`/`worker`) and `sandbox` (builds the no-network image that `code_exec` runs snippets in). Host ports that commonly collide (8000, 8501) are remapped.
+
+### Local development (host-run API, inline mode)
+
+```bash
 uv venv --python 3.12 .venv
 uv pip install -e ".[dev]"
 
-make infra                        # postgres, redis, chromadb (docker compose)
-make migrate                      # apply schema
-make seed                         # seed the demo schema used by db_query
-make sandbox                      # build the code-exec sandbox image
+make infra                        # postgres, redis, chromadb only
+make migrate && make seed         # schema + demo data
+make sandbox                      # code-exec sandbox image
 
-make dev                          # FastAPI on :8080, inline run mode
+make dev                          # FastAPI on :8080, inline run mode (no worker needed)
 make review-ui                    # human review queue on :8511
 make trace-ui                     # trace explorer (spans, costs, replay) on :8512
 ```
+
+## Demo scenario
+
+`make demo` ([scripts/run_demo.py](scripts/run_demo.py)) drives the showcase end-to-end over the API:
+
+1. **Seeds long-term memory** by running a prior vector-database comparison task to completion — so step 2's planning is visibly memory-informed.
+2. **Submits the showcase task** — *"Research the top 3 open-source vector databases (Chroma, Qdrant, Weaviate), extract and compare their GitHub statistics, analyze the trade-offs, and produce a one-page recommendation memo with cited sources"* — with human review requested.
+3. **Narrates the run live**: three research specialists fan out in parallel (one per candidate), the analysis specialist pulls GitHub stats via SQL and computes the comparison in the code sandbox, and the reviewer rejects the first memo draft for missing citations before the reworked draft passes.
+4. **Pauses once for you**: approve the final memo in the review UI on :8511 (or pass `--auto-approve` for an unattended run).
+5. **Closes with the receipts**: the delivered memo, execution waves, reviewer verdicts, memory retrievals and write-backs, escalations with human review time, and the dollar cost — plus links into the trace explorer.
+
+`scripts/record_fixtures.py` is the companion tool: it runs any request against the live providers and captures every LLM response as an exact-match fixture, which is how the deterministic `MOCK_LLM=1` corpus was built.
 
 ## Usage
 
@@ -226,10 +256,21 @@ curl -X POST localhost:8080/approvals/<id>/resolve \
 
 ```bash
 make test              # unit + integration, MOCK_LLM=1 — deterministic, no API keys, no cost
+make e2e               # the end-to-end suite (below), same determinism guarantees
 pytest -m live          # optional: one real round-trip against OpenAI, needs a key
 ```
 
-Integration tests exercise the full stack — API → graph → Postgres — using recorded LLM fixtures (`tests/fixtures/llm/`) instead of live calls, so the same suite that runs in CI also runs offline.
+The e2e suite pins the six system-level behaviors, plus a full lifecycle:
+
+1. **Decomposition** produces schema-valid, acyclic plans with confidence across differently-shaped requests (diamond, fan-in pipeline, single node).
+2. **Specialists use exactly their own tools**, with arguments, outputs, and latency logged per invocation.
+3. **The reviewer catches deliberately bad output** — a citation-free memo draft is rejected with feedback and the rework loop re-runs the specialist.
+4. **Memory improves planning**: a second similar task retrieves what the first one learned, provably inside the planning prompt and recorded in the trace.
+5. **All five escalation triggers** fire under simulation, map to their approval level, pause the run, and resume on approval.
+6. **Graceful failure recovery**: a forced specialist exception retries with a revised approach, escalates on the second failure, and never leaves the task inconsistent.
+7. **Full lifecycle**: the demo scenario start-to-finish with programmatic approvals — final output, memory write-back, cleared working memory, complete trace tree, non-zero computed cost.
+
+All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so the same suite that runs in CI also runs offline.
 
 ## Repository structure
 
@@ -253,13 +294,24 @@ ui/
 ├── review_app.py           # Streamlit human review queue (port 8511)
 └── trace_explorer.py       # Streamlit trace/cost/replay explorer (port 8512)
 
+docker/
+├── api.Dockerfile          # FastAPI image (also runs migrations + seed at compose startup)
+├── worker.Dockerfile       # Celery worker/beat image (+ docker CLI for the code sandbox)
+├── ui.Dockerfile           # shared Streamlit image for both UIs
+└── sandbox.Dockerfile      # minimal no-network image code_exec runs snippets in
+
+scripts/
+├── run_demo.py             # scripted showcase scenario against the composed stack
+└── record_fixtures.py      # capture live LLM responses as MOCK_LLM fixtures
+
 tests/
 ├── unit/                   # schemas, registry, tools, graph routing, memory, triggers, spans, pricing
 ├── integration/            # API → graph → Postgres/Redis/ChromaDB, pause/resume, traces, replay
+├── e2e/                    # the six system-level scenarios + the full-lifecycle test
 └── fixtures/llm/           # recorded LLM responses for deterministic runs
 ```
 
-Remaining phases: the fully containerized 7-service stack with a scripted demo scenario, then portfolio polish (see [Project status](#project-status)).
+Remaining: portfolio polish — recorded demo walkthrough and final narrative (see [Project status](#project-status)).
 
 ## Design decisions
 
@@ -275,3 +327,4 @@ Remaining phases: the fully containerized 7-service stack with a scripted demo s
 - **Humans get context, not a yes/no button.** Every approval carries the request, plan, completed steps, the exact step in question, the agent's proposed action with reasoning, and relevant memories — plus a chat panel over the checkpointed state — because a reviewer who can't see why will rubber-stamp.
 - **Spans land in Postgres, not a collector.** A custom OpenTelemetry exporter writes spans to the same database everything else lives in — one query joins a decision to its tool calls, its cost, and its approval, and the deployment stays at zero extra observability services.
 - **Replay is provably offline.** Strict replay constructs the client without any fallback, so "no API calls were made" is a structural guarantee, not a promise — and replayed runs are barred from long-term memory so debugging never pollutes what the system has learned.
+- **The composed stack demos key-free.** The recorded fixtures ship inside the api/worker images, so `MOCK_LLM=1` turns the full 7-service deployment — Celery execution, HITL pauses, tracing, the demo scenario — into something anyone can run without spending a cent or holding an API key; the real providers are one `.env` edit away.

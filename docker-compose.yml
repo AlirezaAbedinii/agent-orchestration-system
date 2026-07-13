@@ -1,7 +1,27 @@
 name: agent-orchestration-system
 
-# Phase 0: infra services only. The api, worker, and UI services are added in Phase 5
-# (see PROJECT_IMPLEMENTATION_PLAN.md §6.3).
+# Full system (plan §6.3): api, worker, redis, postgres, chromadb, review-ui,
+# trace-explorer — plus two one-shot helpers: `migrate` (Alembic upgrade +
+# demo-schema seed, gating api/worker startup) and `sandbox` (builds the
+# code_exec sandbox image before the worker starts).
+#
+# Host ports are remapped where the defaults tend to be taken on dev machines:
+# chroma 8010→8000, review UI 8511→8501, trace explorer 8512→8502.
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://orchestrator:orchestrator@postgres:5432/orchestrator
+  REDIS_URL: redis://redis:6379/0
+  CHROMA_HOST: chromadb
+  CHROMA_PORT: 8000
+  RUN_MODE: ${RUN_MODE:-celery}
+  MOCK_LLM: ${MOCK_LLM:-0}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  PLAN_CONFIDENCE_THRESHOLD: ${PLAN_CONFIDENCE_THRESHOLD:-0.7}
+  REVIEW_SCORE_THRESHOLD: ${REVIEW_SCORE_THRESHOLD:-3}
+  MAX_SPECIALIST_RETRIES: ${MAX_SPECIALIST_RETRIES:-2}
+  APPROVAL_WEBHOOK_URL: ${APPROVAL_WEBHOOK_URL:-}
 
 services:
   postgres:
@@ -49,7 +69,123 @@ services:
       timeout: 3s
       retries: 10
 
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: agent-orchestration-api
+    environment: *app-env
+    command: sh -c "alembic upgrade head && python -m orchestrator.db.seed_demo_data"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  sandbox:
+    # One-shot: exists to build the code_exec sandbox image the worker launches
+    # sibling containers from. Exits immediately once the image is present.
+    build:
+      context: docker
+      dockerfile: sandbox.Dockerfile
+    image: orchestrator-sandbox
+    command: ["python", "-c", "print('sandbox image ready')"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: agent-orchestration-api
+    environment: *app-env
+    ports:
+      - "8080:8080"
+    volumes:
+      - workspaces:/app/task_workspaces
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    image: agent-orchestration-worker
+    environment:
+      <<: *app-env
+      CODE_EXEC_BACKEND: docker
+      CODE_EXEC_IMAGE: orchestrator-sandbox
+    volumes:
+      # code_exec runs sibling sandbox containers through the host engine
+      - /var/run/docker.sock:/var/run/docker.sock
+      - workspaces:/app/task_workspaces
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      sandbox:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A orchestrator.workers.celery_app inspect ping --timeout 10 | grep -q pong"]
+      interval: 15s
+      timeout: 15s
+      retries: 10
+      start_period: 40s
+
+  review-ui:
+    build:
+      context: .
+      dockerfile: docker/ui.Dockerfile
+    image: agent-orchestration-ui
+    command: ["streamlit", "run", "ui/review_app.py", "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true"]
+    environment:
+      ORCHESTRATOR_API_URL: http://api:8080
+    ports:
+      - "8511:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  trace-explorer:
+    build:
+      context: .
+      dockerfile: docker/ui.Dockerfile
+    image: agent-orchestration-ui
+    command: ["streamlit", "run", "ui/trace_explorer.py", "--server.port", "8502", "--server.address", "0.0.0.0", "--server.headless", "true"]
+    environment:
+      ORCHESTRATOR_API_URL: http://api:8080
+    ports:
+      - "8512:8502"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8502/_stcore/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
 volumes:
   pgdata:
   redisdata:
   chromadata:
+  workspaces:

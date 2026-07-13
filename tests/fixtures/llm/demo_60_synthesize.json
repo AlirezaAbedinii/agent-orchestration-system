@@ -1,0 +1,8 @@
+{
+  "agent": "supervisor",
+  "match": ["Synthesize the final deliverable", "top 3 open-source vector databases"],
+  "response": {
+    "text": "FINAL RECOMMENDATION: Qdrant — highest GitHub traction of the three candidates (24k stars) with strong filtered search; choose Chroma (21k) to embed directly in a Python app, or Weaviate (13k) when built-in hybrid search matters most. Full memo with cited sources delivered as recommendation.md.",
+    "model": "mock-gpt-4o", "prompt_tokens": 820, "completion_tokens": 120
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "agent": "analysis",
+  "match": ["GitHub statistics", "db_query returned"],
+  "response": {
+    "text": "{\"action\": \"tool\", \"tool\": \"code_exec\", \"arguments\": {\"code\": \"rows = [('qdrant', 24000), ('chroma', 21000), ('weaviate', 13000)]\\ntop = rows[0]\\nfor name, stars in rows:\\n    print(f'{name:<10} {stars:>6} stars  ({stars / top[1]:.0%} of leader)')\"}}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 470, "completion_tokens": 90
+  }
+}

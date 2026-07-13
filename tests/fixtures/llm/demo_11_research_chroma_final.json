@@ -1,0 +1,8 @@
+{
+  "agent": "research",
+  "match": ["Research Chroma", "[mock] result for"],
+  "response": {
+    "text": "{\"action\": \"final\", \"output\": \"CHROMA-FACTS: Chroma is an open-source embedding database optimized for developer ergonomics and quick local starts; Apache-2.0 licensed. Source: https://github.com/chroma-core/chroma\"}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 380, "completion_tokens": 70
+  }
+}

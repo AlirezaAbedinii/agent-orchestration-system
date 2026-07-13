@@ -1,0 +1,8 @@
+{
+  "agent": "research",
+  "match": ["Research Weaviate", "[mock] result for"],
+  "response": {
+    "text": "{\"action\": \"final\", \"output\": \"WEAVIATE-FACTS: Weaviate is a Go vector database with built-in hybrid search and modular vectorizers; BSD-3-Clause licensed. Source: https://github.com/weaviate/weaviate\"}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 380, "completion_tokens": 70
+  }
+}

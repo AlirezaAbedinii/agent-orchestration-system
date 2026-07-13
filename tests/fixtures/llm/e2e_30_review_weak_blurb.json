@@ -1,0 +1,8 @@
+{
+  "agent": "reviewer",
+  "match": ["Review the following specialist output", "WEAK-BLURB"],
+  "response": {
+    "text": "{\"score\": 2, \"feedback\": \"Not good enough: flat copy with no value proposition and no audience.\"}",
+    "model": "mock-claude-sonnet-5", "prompt_tokens": 190, "completion_tokens": 40
+  }
+}

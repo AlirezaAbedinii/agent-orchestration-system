@@ -1,0 +1,12 @@
+.git
+.venv
+.env
+.pytest_cache
+__pycache__
+**/__pycache__
+*.pyc
+src/*.egg-info
+task_workspaces
+docs
+BASWE__15_AI_Engineering_Projects_Guide.docx.md
+PROJECT_IMPLEMENTATION_PLAN.md

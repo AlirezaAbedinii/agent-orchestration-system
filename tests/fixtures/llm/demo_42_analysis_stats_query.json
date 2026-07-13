@@ -1,0 +1,8 @@
+{
+  "agent": "analysis",
+  "match": ["GitHub statistics", "Transcript: (none yet)"],
+  "response": {
+    "text": "{\"action\": \"tool\", \"tool\": \"db_query\", \"arguments\": {\"sql\": \"SELECT name, github_stars, license FROM demo.vector_db_stats ORDER BY github_stars DESC\"}}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 420, "completion_tokens": 50
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "agent": "writing",
+  "match": ["recommendation memo", "Transcript: (none yet)"],
+  "response": {
+    "text": "{\"action\": \"final\", \"output\": \"RECOMMENDATION-DRAFT: Qdrant seems best overall, Chroma is nice for Python, Weaviate does hybrid search. Trust me on the numbers.\"}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 650, "completion_tokens": 60
+  }
+}

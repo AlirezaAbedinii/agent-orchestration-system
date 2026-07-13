@@ -1,4 +1,4 @@
-.PHONY: infra dev test migrate seed sandbox review-ui trace-ui
+.PHONY: infra dev test e2e demo migrate seed sandbox review-ui trace-ui
 
 VENV ?= .venv
 UVICORN ?= $(VENV)/bin/uvicorn
@@ -15,7 +15,13 @@ dev:  ## run the API locally in inline mode (no worker needed)
 	RUN_MODE=inline $(UVICORN) orchestrator.main:app --reload --port 8080
 
 test:  ## unit + integration tests; deterministic, no API keys needed
-	MOCK_LLM=1 $(PYTEST) tests -q -m "not live"
+	MOCK_LLM=1 $(PYTEST) tests/unit tests/integration -q -m "not live"
+
+e2e:  ## the six guide-mandated e2e tests + full lifecycle (MOCK_LLM, no keys)
+	MOCK_LLM=1 $(PYTEST) tests/e2e -q -m "not live"
+
+demo:  ## scripted showcase scenario against the composed stack (docker compose up first)
+	$(VENV)/bin/python scripts/run_demo.py
 
 migrate:  ## apply Alembic migrations to the composed postgres
 	DATABASE_URL=$(LOCAL_DATABASE_URL) $(ALEMBIC) upgrade head

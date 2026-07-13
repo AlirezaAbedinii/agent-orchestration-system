@@ -1,0 +1,8 @@
+{
+  "agent": "reviewer",
+  "match": ["Review the following specialist output", "RECOMMENDATION-DRAFT"],
+  "response": {
+    "text": "{\"score\": 2, \"feedback\": \"Missing citations: every claim in the memo must cite a source URL, and the memo must include a Sources section. 'Trust me on the numbers' is not a citation.\"}",
+    "model": "mock-claude-sonnet-5", "prompt_tokens": 260, "completion_tokens": 60
+  }
+}

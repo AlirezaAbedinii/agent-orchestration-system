@@ -1,0 +1,8 @@
+{
+  "agent": "supervisor",
+  "match": ["Create an execution plan", "TRIGGER-LOWCONF"],
+  "response": {
+    "text": "{\"task_summary\": \"Survey a shaky emerging topic with little established coverage\", \"subtasks\": [{\"id\": \"s1\", \"description\": \"Survey the shaky emerging topic\", \"specialist\": \"research\", \"required_inputs\": [], \"expected_output_format\": \"notes with sources\", \"estimated_complexity\": \"high\", \"depends_on\": []}], \"confidence\": 0.4}",
+    "model": "mock-gpt-4o", "prompt_tokens": 400, "completion_tokens": 120
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "agent": "analysis",
+  "match": ["GitHub statistics", "code_exec returned"],
+  "response": {
+    "text": "{\"action\": \"final\", \"output\": \"TRADEOFF-ANALYSIS: GitHub stars — qdrant 24000 > chroma 21000 > weaviate 13000. Qdrant leads on community traction and filtered-search performance (Rust); Chroma is the easiest to embed in a Python app (Apache-2.0); Weaviate bundles hybrid search out of the box (BSD-3-Clause).\"}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 520, "completion_tokens": 110
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "agent": "writing",
+  "match": ["recommendation memo", "Missing citations", "Transcript: (none yet)"],
+  "response": {
+    "text": "{\"action\": \"tool\", \"tool\": \"file_write\", \"arguments\": {\"path\": \"recommendation.md\", \"content\": \"# Recommendation: open-source vector databases\\n\\n**Recommendation: Qdrant** — highest GitHub traction (24k stars [1]) and strong filtered search. Chroma (21k stars [2]) is the pick when embedding directly in a Python app; Weaviate (13k stars [3]) when hybrid search matters most.\\n\\n## Sources\\n1. https://github.com/qdrant/qdrant\\n2. https://github.com/chroma-core/chroma\\n3. https://github.com/weaviate/weaviate\\n\"}}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 700, "completion_tokens": 240
+  }
+}

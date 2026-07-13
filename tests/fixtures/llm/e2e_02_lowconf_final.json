@@ -1,0 +1,8 @@
+{
+  "agent": "research",
+  "match": ["shaky emerging topic", "[mock] result for"],
+  "response": {
+    "text": "{\"action\": \"final\", \"output\": \"SHAKY-NOTES: only early signals exist; coverage is thin. Source: https://example.com/mock\"}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 330, "completion_tokens": 50
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "agent": "writing",
+  "match": ["product blurb", "ship it"],
+  "response": {
+    "text": "{\"action\": \"final\", \"output\": \"STRONG-BLURB: Meet the launch — the fastest way to turn messy workflows into one-click automations, approved wording included.\"}",
+    "model": "mock-gpt-4o-mini", "prompt_tokens": 360, "completion_tokens": 55
+  }
+}
