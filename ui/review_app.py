@@ -1,5 +1,6 @@
-"""Human review UI: approval queue, decision context, resolution actions, and
-a clarifying-question chat grounded in the paused task's state.
+"""Human review UI: approval queue, decision context, resolution actions, a
+clarifying-question chat grounded in the paused task's state, and the memory
+dashboard (what the system remembers per user, with the right-to-forget).
 
 Runs against the orchestration API:
     ORCHESTRATOR_API_URL=http://localhost:8080 streamlit run ui/review_app.py --server.port 8511
@@ -69,7 +70,69 @@ def resolve(approval: dict, action: str, payload: dict | None, notes: str) -> No
         st.error(f"Resolution failed: {error.response.text}")
 
 
+def render_memory_dashboard() -> None:
+    """Everything the system remembers about a user, plus recent activity."""
+    st.title("🧠 Memory dashboard")
+    user_id = st.text_input("User id", value="default")
+    if not user_id.strip():
+        st.stop()
+    data = api("GET", f"/memory/users/{user_id.strip()}")
+
+    counts = data.get("counts") or {}
+    for column, kind in zip(st.columns(max(len(counts), 1)), sorted(counts)):
+        column.metric(kind, counts[kind])
+
+    for kind, items in sorted((data.get("collections") or {}).items()):
+        st.markdown(f"#### {kind} ({len(items)})")
+        if not items:
+            st.caption("Nothing stored yet.")
+            continue
+        st.dataframe(
+            [
+                {
+                    "memory": item["text"],
+                    "importance": round(item["importance"] or 0.0, 3),
+                    "accessed": item["access_count"] or 0,
+                    "from task": (item["task_id"] or "")[:8],
+                    "created": (item["created_at"] or "")[:19],
+                }
+                for item in items
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    events = data.get("recent_events") or []
+    with st.expander(f"Recent memory activity ({len(events)})"):
+        for event in events:
+            st.caption(
+                f"· {event['created_at'][:19]} — {event['action']} {event['kind']} "
+                f"`{event['memory_id'][:8]}`"
+                + (f" (task {event['task_id'][:8]})" if event.get("task_id") else "")
+            )
+
+    st.divider()
+    st.markdown("#### Right to forget")
+    st.caption("Purges the user's long-term memories, working memory, and audit trail.")
+    if st.button(f"🗑️ Forget everything about '{user_id}'", type="secondary"):
+        deleted = api("DELETE", f"/memory/users/{user_id.strip()}")["deleted"]
+        st.success(
+            f"Deleted {deleted['long_term']} long-term memories, cleared "
+            f"{deleted['working_memory_tasks']} working-memory task(s), purged "
+            f"{deleted['audit_events']} audit event(s)."
+        )
+
+
 st.set_page_config(page_title="Review Queue — Agent Orchestration", page_icon="🛎️", layout="wide")
+
+with st.sidebar:
+    page = st.radio("Page", ["🛎️ Review queue", "🧠 Memory dashboard"], label_visibility="collapsed")
+    st.divider()
+
+if page == "🧠 Memory dashboard":
+    render_memory_dashboard()
+    st.stop()
+
 st.title("🛎️ Human review queue")
 
 # ---------------------------------------------------------------- sidebar --
