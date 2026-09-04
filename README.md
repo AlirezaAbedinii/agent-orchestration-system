@@ -427,3 +427,7 @@ The full reasoning lives in [docs/architecture.md](docs/architecture.md); the he
 3. SSE/WebSocket progress streaming for the UIs and demo script.
 4. AuthN + per-tenant memory namespaces.
 5. An eval harness scoring plan quality and reviewer calibration across fixture corpora.
+
+## License
+
+[MIT](LICENSE)
