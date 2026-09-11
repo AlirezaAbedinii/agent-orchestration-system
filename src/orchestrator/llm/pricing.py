@@ -12,8 +12,10 @@ from __future__ import annotations
 PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
     "gpt-4o": (2.50, 10.00),
     "gpt-4o-mini": (0.15, 0.60),
-    "claude-sonnet-5": (3.00, 15.00),
-    "claude-sonnet-4-5": (3.00, 15.00),
+    "claude-sonnet-5": (2.00, 10.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-sonnet-4-5": (3.00, 15.00),  # legacy
+    "claude-haiku-4-5": (1.00, 5.00),
     "text-embedding-3-small": (0.02, 0.0),
 }
 

@@ -12,7 +12,8 @@ def test_hand_computed_gpt4o_cost():
 
 def test_hand_computed_mini_and_sonnet_costs():
     assert cost_usd("gpt-4o-mini", 2_000_000, 1_000_000) == pytest.approx(0.30 + 0.60)
-    assert cost_usd("claude-sonnet-5", 100_000, 10_000) == pytest.approx(0.30 + 0.15)
+    assert cost_usd("claude-sonnet-5", 100_000, 10_000) == pytest.approx(0.20 + 0.10)
+    assert cost_usd("claude-haiku-4-5", 100_000, 10_000) == pytest.approx(0.10 + 0.05)
 
 
 def test_provider_prefix_and_mock_prefix_are_normalized():
