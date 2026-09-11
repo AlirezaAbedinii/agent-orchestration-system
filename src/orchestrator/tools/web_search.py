@@ -1,6 +1,6 @@
 """Web search tool: Tavily API with DuckDuckGo fallback; canned under MOCK_LLM.
 
-External effects are mocked at the tool boundary (plan §7): with MOCK_LLM=1 the
+External effects are mocked at the tool boundary: with MOCK_LLM=1 the
 handler returns deterministic results without any network call.
 """
 

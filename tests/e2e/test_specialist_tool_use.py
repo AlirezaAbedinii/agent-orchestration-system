@@ -1,4 +1,4 @@
-"""E2E 2 (plan §7): specialists correctly use their tools.
+"""E2E 2: specialists correctly use their tools.
 
 Every specialist that ran logged at least one invocation, every invocation
 respected tool ownership, and inputs/outputs were captured.

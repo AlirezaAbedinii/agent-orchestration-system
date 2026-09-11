@@ -1,4 +1,4 @@
-"""ExecutionPlan / Subtask schemas (PROJECT_IMPLEMENTATION_PLAN.md §5 Phase 1.2).
+"""ExecutionPlan / Subtask schemas.
 
 The supervisor emits these via structured output. Validation enforces unique
 subtask ids, resolvable dependencies, and an acyclic dependency graph.

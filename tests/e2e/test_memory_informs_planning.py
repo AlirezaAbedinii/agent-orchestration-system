@@ -1,4 +1,4 @@
-"""E2E 4 (plan §7): memory improves planning on repeated similar tasks.
+"""E2E 4: memory improves planning on repeated similar tasks.
 
 After a completed comparison task, a similar research task must retrieve at
 least one extracted memory, the planning prompt must literally contain it, and

@@ -1,4 +1,4 @@
-"""Full-lifecycle test (plan §7): the §5.1 demo scenario start-to-finish with
+"""Full-lifecycle test: the showcase demo scenario start-to-finish with
 programmatic approvals.
 
 Asserts the final output, memory write-back, cleared working memory, a

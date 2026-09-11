@@ -1,4 +1,4 @@
-"""Replay system (plan §5 Phase 4.4).
+"""Replay system.
 
 Every LLM call is recorded (llm_calls) with its full prompt and response, so
 any past execution can be re-run deterministically: the replay client serves

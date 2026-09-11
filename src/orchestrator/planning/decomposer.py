@@ -1,7 +1,7 @@
 """Task decomposition engine: request → validated ExecutionPlan.
 
 Invalid structured output is retried exactly once with the validation error
-appended to the prompt (plan §5 Phase 1.2).
+appended to the prompt.
 """
 
 from __future__ import annotations

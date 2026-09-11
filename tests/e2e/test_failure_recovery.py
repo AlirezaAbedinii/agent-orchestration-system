@@ -1,4 +1,4 @@
-"""E2E 6 (plan §7): graceful recovery from agent failures.
+"""E2E 6: graceful recovery from agent failures.
 
 A fixture forces the research specialist to call a nonexistent tool: the first
 failure retries with a revised-approach instruction, the second failure

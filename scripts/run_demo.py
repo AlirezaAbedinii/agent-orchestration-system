@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Showcase demo (plan §5 Phase 5.1): the vector-database research scenario.
+"""Showcase demo: the vector-database research scenario.
 
 Drives the composed stack end-to-end over the HTTP API:
 

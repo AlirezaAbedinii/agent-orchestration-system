@@ -1,4 +1,4 @@
-"""Agent → provider/model routing (PROJECT_IMPLEMENTATION_PLAN.md §3.2).
+"""Agent → provider/model routing.
 
 The supervisor gets a strong model, specialists a cheaper one, and the reviewer
 is always routed to a *different provider* than the agent whose output it

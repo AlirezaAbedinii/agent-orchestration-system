@@ -1,6 +1,6 @@
 """Central configuration.
 
-Every runtime flag and threshold lives here (see PROJECT_IMPLEMENTATION_PLAN.md §6.2).
+Every runtime flag and threshold lives here.
 Values come from the environment or a local .env file; defaults target host-run
 development against `make infra` services.
 """

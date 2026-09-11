@@ -1,6 +1,6 @@
 name: agent-orchestration-system
 
-# Full system (plan §6.3): api, worker, redis, postgres, chromadb, review-ui,
+# Full system: api, worker, redis, postgres, chromadb, review-ui,
 # trace-explorer — plus two one-shot helpers: `migrate` (Alembic upgrade +
 # demo-schema seed, gating api/worker startup) and `sandbox` (builds the
 # code_exec sandbox image before the worker starts).

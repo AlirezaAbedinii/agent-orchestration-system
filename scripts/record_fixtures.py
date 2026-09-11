@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Capture live LLM responses as MOCK_LLM fixtures (plan §7 determinism strategy).
+"""Capture live LLM responses as MOCK_LLM fixtures.
 
 Runs a request through the full graph against the real providers, recording
 every (agent, prompt) → response pair as ``<out>/<sha16>.json`` — the

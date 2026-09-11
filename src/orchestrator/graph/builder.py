@@ -1,4 +1,4 @@
-"""LangGraph state machine (plan §5 Phase 1.4 + Phase 3 human-in-the-loop).
+"""LangGraph state machine.
 
 intake → plan → (plan gate) → schedule ⇄ execute/gather loops → synthesize
 → (final gate) → deliver, with conditional edges for rework and

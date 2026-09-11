@@ -1,4 +1,4 @@
-"""E2E 5 (plan §7): escalation triggers at the right moments.
+"""E2E 5: escalation triggers at the right moments.
 
 Each of the five triggers fires under a simulated condition, maps to its
 configured approval level, pauses the run, and resumes when the human

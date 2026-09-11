@@ -1,4 +1,4 @@
-"""Cost & performance tracking (plan §5 Phase 4.3).
+"""Cost & performance tracking.
 
 Per task: tokens by agent/model, tool call counts, wall-clock time, human
 review time, total dollars. Across tasks, the four rollups: cost per task

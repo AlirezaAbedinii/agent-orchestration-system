@@ -1,4 +1,4 @@
-"""E2E 3 (plan §7): the reviewer catches deliberately bad output.
+"""E2E 3: the reviewer catches deliberately bad output.
 
 The writing specialist's first memo draft is fixture-corrupted — it cites
 nothing ("trust me on the numbers"). The reviewer must reject it with

@@ -1,4 +1,4 @@
-"""E2E 1 (plan §7): task decomposition produces valid plans.
+"""E2E 1: task decomposition produces valid plans.
 
 Three differently-shaped requests — a diamond (three parallel subtasks feeding
 one), a two-stage fan-in pipeline, and a single-node plan. Every plan must be
