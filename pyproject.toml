@@ -30,6 +30,7 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "httpx>=0.27",
+    "ruff>=0.4",
 ]
 
 [tool.setuptools]
@@ -37,6 +38,14 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# Pyflakes + pycodestyle errors/warnings; kept explicit so a newer ruff can't
+# silently widen the set and turn CI red.
+select = ["E4", "E7", "E9", "F", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

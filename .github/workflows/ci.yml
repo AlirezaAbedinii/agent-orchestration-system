@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-latest
+    env:
+      # Never call real providers from CI; tests replay recorded fixtures.
+      MOCK_LLM: "1"
+      # code_exec runs in an isolated subprocess (no Docker socket on the runner).
+      CODE_EXEC_BACKEND: subprocess
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (editable + dev tools)
+        run: |
+          python -m pip install uv
+          uv pip install --system -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: python -m ruff check .
+
+      - name: Unit tests (in-process; no postgres/redis/chroma services)
+        run: python -m pytest tests/unit -q -m "not live"

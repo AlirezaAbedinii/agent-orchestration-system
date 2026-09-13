@@ -6,7 +6,6 @@ Runs against the orchestration API:
 
 from __future__ import annotations
 
-import json
 import os
 from collections import defaultdict
 
