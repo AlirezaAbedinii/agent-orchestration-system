@@ -1,5 +1,9 @@
 # Agent Orchestration System
 
+[![CI](https://github.com/AlirezaAbedinii/agent-orchestration-system/actions/workflows/ci.yml/badge.svg)](https://github.com/AlirezaAbedinii/agent-orchestration-system/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 ```mermaid
 flowchart TD
     USER([complex request]) --> SUP
@@ -276,6 +280,7 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | 4 | Execution tracing, trace explorer, cost tracking, replay/fork/compare | ✅ Done |
 | 5 | Full containerized stack, demo scenario, end-to-end tests | ✅ Done |
 | 6 | Portfolio polish — architecture doc ✅, README ✅, screenshots & <5-min recording | 🚧 recording pending |
+| CI | GitHub Actions: ruff + unit suite on every push and PR (mock LLM, no services) | ✅ Done |
 
 ## Local development
 
@@ -337,7 +342,7 @@ The e2e suite pins the six system-level behaviors, plus a full lifecycle:
 6. **Graceful failure recovery**: a forced specialist exception retries with a revised approach, escalates on the second failure, and never leaves the task inconsistent.
 7. **Full lifecycle**: the demo scenario start-to-finish with programmatic approvals — final output, memory write-back, cleared working memory, complete trace tree, non-zero computed cost.
 
-All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so the same suite that runs in CI also runs offline.
+All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so every suite runs offline with no keys. CI (GitHub Actions) runs ruff and the unit suite on every push and pull request; the integration and e2e suites need the compose services, so they run locally via `make test` / `make e2e`.
 
 > Note: integration/e2e tests run against the compose services and truncate state between tests — re-run `make demo` afterwards if you want showcase data back in the UIs.
 
